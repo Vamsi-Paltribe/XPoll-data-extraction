@@ -2,7 +2,8 @@ const express = require('express');
 const multer = require('multer');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
-const { processPdfWithGemini } = require('../services/geminiProcessor');
+const { processDocumentWithOpenAI } = require('../services/openaiProcessor');
+// const { processPdfWithGemini } = require('../services/geminiProcessor');
 const { updateGoogleSheets } = require('../services/googleSheetsService');
 
 const router = express.Router();
@@ -27,32 +28,43 @@ const upload = multer({
         fileSize: 10 * 1024 * 1024, // 10MB limit
     },
     fileFilter: (req, file, cb) => {
-        // Accept only PDF files
-        if (file.mimetype === 'application/pdf') {
+        // Accept PDF, Excel, Word, CSV, Images
+        const allowedTypes = [
+            'application/pdf',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+            'text/csv',
+            'image/jpeg',
+            'image/jpg',
+            'image/png'
+        ];
+
+        if (allowedTypes.includes(file.mimetype)) {
             cb(null, true);
         } else {
-            cb(new Error('Only PDF files are allowed'), false);
+            cb(new Error('Only PDF, Excel, Word, CSV, and Image files are allowed'), false);
         }
     }
 });
 
 /**
- * POST /admin/upload-pdf/preview
- * Upload PDF and get preview of extracted data (does NOT save to sheets)
+ * POST /admin/upload-document/preview
+ * Upload document (PDF/Excel/Word/CSV) and get preview of extracted data
  */
-router.post('/upload-pdf/preview', auth, adminOnly, upload.single('file'), async (req, res) => {
+router.post('/upload-document/preview', auth, adminOnly, upload.single('file'), async (req, res) => {
     try {
-        console.log('[Upload Preview] Received PDF upload request');
+        console.log('[Upload Preview] Received document upload request');
 
         // Validate file
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        console.log(`[Upload Preview] File: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+        console.log(`[Upload Preview] File: ${req.file.originalname}, Type: ${req.file.mimetype}, Size: ${req.file.size} bytes`);
 
-        // Process PDF with Gemini (extraction only, no sheet update)
-        const extractedData = await processPdfWithGemini(req.file.buffer);
+        // Process document with OpenAI
+        const extractedData = await processDocumentWithOpenAI(req.file.buffer, req.file.mimetype);
 
         // Return preview data
         res.json({
@@ -74,12 +86,12 @@ router.post('/upload-pdf/preview', auth, adminOnly, upload.single('file'), async
     } catch (error) {
         console.error('[Upload Preview] Error:', error.message);
 
-        if (error.message.includes('PDF appears to be empty')) {
-            return res.status(400).json({ error: 'PDF file is empty or unreadable' });
+        if (error.message.includes('appears to be empty')) {
+            return res.status(400).json({ error: 'Document file is empty or unreadable' });
         }
 
-        if (error.message.includes('Gemini returned invalid')) {
-            return res.status(500).json({ error: 'Failed to extract data from PDF. Please ensure the PDF contains structured voter data.' });
+        if (error.message.includes('Unsupported file type')) {
+            return res.status(400).json({ error: error.message });
         }
 
         res.status(500).json({ error: `Preview failed: ${error.message}` });
@@ -87,10 +99,10 @@ router.post('/upload-pdf/preview', auth, adminOnly, upload.single('file'), async
 });
 
 /**
- * POST /admin/upload-pdf/commit
+ * POST /admin/upload-document/commit
  * Commit previously extracted data to Google Sheets
  */
-router.post('/upload-pdf/commit', auth, adminOnly, async (req, res) => {
+router.post('/upload-document/commit', auth, adminOnly, async (req, res) => {
     try {
         console.log('[Upload Commit] Received commit request');
 

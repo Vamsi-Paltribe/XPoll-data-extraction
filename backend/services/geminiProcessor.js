@@ -1,40 +1,29 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const pdfParse = require('pdf-parse');
 
-/**
- * Process PDF with Gemini Flash 2.0
- * Extracts voter data and organizes by state
- * @param {Buffer} pdfBuffer - PDF file buffer
- * @returns {Promise<Object>} - { "StateName": [{Name, City, Age, ...}], ... }
- */
 async function processPdfWithGemini(pdfBuffer) {
     try {
-        // 1. Extract text from PDF
-        console.log('[Gemini] Parsing PDF...');
-        const pdfData = await pdfParse(pdfBuffer);
-        const text = pdfData.text;
+        // 1. Prepare PDF for multimodal input
+        console.log('[Gemini] Encoding PDF to Base64...');
+        const pdfPart = {
+            inlineData: {
+                data: pdfBuffer.toString("base64"),
+                mimeType: "application/pdf"
+            }
+        };
 
-        if (!text || text.trim().length === 0) {
-            throw new Error('PDF appears to be empty or contains no extractable text');
-        }
-
-        console.log(`[Gemini] Extracted ${text.length} characters from PDF`);
-
-        // 2. Initialize Gemini
+        // 2. Initialize Gemini Pro Vision (Supports multimodal PDF input)
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({
-            model: "gemini-2.0-flash-exp",
+            model: "gemini-2.0-flash",
             generationConfig: {
-                responseMimeType: "application/json",
-                temperature: 0.1 // Low temperature for consistent extraction
+                temperature: 0.1
             }
         });
 
-        // 3. Create extraction prompt
+        // 3. Create extraction prompt (Optimized for Multimodal)
         const prompt = `
 You are a data extraction assistant for voter registration records.
-
-TASK: Extract ALL voter/candidate information from the provided document and organize by STATE.
+TASK: Extract ALL voter/candidate information from the ATTACHED PDF and organize by STATE.
 
 REQUIRED OUTPUT FORMAT (JSON):
 {
@@ -51,36 +40,30 @@ REQUIRED OUTPUT FORMAT (JSON):
 }
 
 RULES:
-1. Group all records by their STATE (use state name as key, e.g., "Georgia", "Florida")
-2. If state is not explicitly mentioned, try to infer from city names or context
-3. Extract ALL available fields for each person
-4. If a field is not available, use null
-5. Ensure Name and City are always present (skip records without these)
-6. Use proper capitalization for state names (e.g., "Georgia" not "GEORGIA")
-7. If you find multiple formats or tables, extract all of them
-
-DOCUMENT TEXT:
-${text}
+1. Group records by STATE.
+2. Infer state from context if not explicit.
+3. Use null for missing fields.
+4. Skip records missing Name or City.
+5. Extract from all tables and formats found in the document.
 `;
 
-        // 4. Call Gemini API
-        console.log('[Gemini] Sending to Gemini Flash 2.0...');
-        const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
+        // 4. Call Gemini API with both Prompt and PDF
+        console.log('[Gemini] Sending to Gemini Flash 2.0 (Multimodal)...');
+        const result = await model.generateContent([prompt, pdfPart]);
+        let responseText = result.response.text();
 
-        console.log('[Gemini] Response received');
+        // 5. Clean & Parse JSON
+        // Strip markdown backticks if they exist
+        const cleanedJson = responseText.replace(/```json|```/g, "").trim();
+        const extractedData = JSON.parse(cleanedJson);
 
-        // 5. Parse JSON response
-        const extractedData = JSON.parse(responseText);
-
-        // 6. Validate structure
-        if (typeof extractedData !== 'object' || Object.keys(extractedData).length === 0) {
+        // 6. Validation
+        if (typeof extractedData !== 'object') {
             throw new Error('Gemini returned invalid data structure');
         }
 
-        // 7. Count total records
         const totalRecords = Object.values(extractedData).reduce((sum, records) => sum + records.length, 0);
-        console.log(`[Gemini] Extracted ${totalRecords} records across ${Object.keys(extractedData).length} state(s)`);
+        console.log(`[Gemini] Success: Extracted ${totalRecords} records.`);
 
         return extractedData;
 
@@ -90,6 +73,4 @@ ${text}
     }
 }
 
-module.exports = {
-    processPdfWithGemini
-};
+module.exports = { processPdfWithGemini };

@@ -25,7 +25,7 @@ const ManageData = () => {
 
         try {
             // Step 1: Get preview
-            const res = await api.post('/admin/upload-pdf/preview', formData, {
+            const res = await api.post('/admin/upload-document/preview', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 
@@ -45,7 +45,7 @@ const ManageData = () => {
 
         try {
             // Step 2: Commit to Google Sheets
-            const res = await api.post('/admin/upload-pdf/commit', {
+            const res = await api.post('/admin/upload-document/commit', {
                 extractedData: previewData.preview
             });
 
@@ -139,11 +139,11 @@ const ManageData = () => {
                     <label className="block">
                         <input
                             type="file"
-                            accept=".pdf"
+                            accept=".pdf,.xlsx,.xls,.docx,.csv,.jpg,.jpeg,.png"
                             onChange={(e) => handleFileUpload(e.target.files[0])}
                             disabled={uploading}
                             className="hidden"
-                            id="pdf-upload"
+                            id="document-upload"
                         />
                         <div className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${uploading
                             ? 'border-purple-300 bg-purple-50'
@@ -152,7 +152,7 @@ const ManageData = () => {
                             {uploading ? (
                                 <div className="flex flex-col items-center gap-4">
                                     <Loader2 className="w-12 h-12 text-purple-600 animate-spin" />
-                                    <p className="text-sm font-bold text-purple-900">Processing with Gemini AI...</p>
+                                    <p className="text-sm font-bold text-purple-900">Processing with OpenAI...</p>
                                     <p className="text-xs text-purple-600">Extracting data and organizing by state</p>
                                 </div>
                             ) : (
@@ -162,10 +162,10 @@ const ManageData = () => {
                                     </div>
                                     <div>
                                         <p className="text-base font-bold text-slate-900 mb-1">
-                                            Click to upload PDF or drag and drop
+                                            Click to upload document or drag and drop
                                         </p>
                                         <p className="text-sm text-slate-500">
-                                            PDF files only, max 10MB
+                                            PDF, Excel, Word, CSV, or Images (JPG, PNG), max 10MB
                                         </p>
                                     </div>
                                 </div>
