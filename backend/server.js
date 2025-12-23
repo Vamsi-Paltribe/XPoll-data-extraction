@@ -44,11 +44,11 @@ app.get('/api/auth/google/callback', passport.authenticate('google', {
 // Server
 const PORT = process.env.PORT || 5000;
 
-// Import// Routes
-app.use('/auth', require('./routes/auth'));
-app.use('/buckets', require('./routes/buckets'));
-app.use('/admin', require('./routes/admin'));
-app.use('/admin', require('./routes/admin-data'));
-app.use('/admin', require('./routes/upload')); // PDF upload route
+// Routes
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/buckets', require('./routes/buckets'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/admin', require('./routes/admin-data'));
+app.use('/api/admin', require('./routes/upload')); // PDF upload route
 
 app.listen(PORT, () => console.log(`Server started on port ${PORT}`));

@@ -37,44 +37,43 @@ const upload = multer({
 });
 
 /**
- * POST /admin/upload-pdf
- * Upload PDF and process with Gemini
- * Appends data to Google Sheets organized by state
+ * POST /admin/upload-pdf/preview
+ * Upload PDF and get preview of extracted data (does NOT save to sheets)
  */
-router.post('/upload-pdf', auth, adminOnly, upload.single('file'), async (req, res) => {
+router.post('/upload-pdf/preview', auth, adminOnly, upload.single('file'), async (req, res) => {
     try {
-        console.log('[Upload] Received PDF upload request');
+        console.log('[Upload Preview] Received PDF upload request');
 
         // Validate file
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        console.log(`[Upload] File: ${req.file.originalname}, Size: ${req.file.size} bytes`);
+        console.log(`[Upload Preview] File: ${req.file.originalname}, Size: ${req.file.size} bytes`);
 
-        // Step 1: Process PDF with Gemini
+        // Process PDF with Gemini (extraction only, no sheet update)
         const extractedData = await processPdfWithGemini(req.file.buffer);
 
-        // Step 2: Update Google Sheets
-        const summary = await updateGoogleSheets(extractedData);
-
-        // Step 3: Return success response
+        // Return preview data
         res.json({
             success: true,
-            message: `Successfully processed ${summary.totalRecords} records across ${summary.totalStates} state(s)`,
+            preview: extractedData,
             summary: {
-                totalStates: summary.totalStates,
-                totalRecords: summary.totalRecords,
-                states: summary.states
+                totalStates: Object.keys(extractedData).length,
+                totalRecords: Object.values(extractedData).reduce((sum, records) => sum + records.length, 0),
+                states: Object.entries(extractedData).map(([name, records]) => ({
+                    name,
+                    recordCount: records.length,
+                    sampleRecords: records.slice(0, 3) // First 3 records as sample
+                }))
             }
         });
 
-        console.log('[Upload] Upload completed successfully');
+        console.log('[Upload Preview] Preview generated successfully');
 
     } catch (error) {
-        console.error('[Upload] Error:', error.message);
+        console.error('[Upload Preview] Error:', error.message);
 
-        // Handle specific error types
         if (error.message.includes('PDF appears to be empty')) {
             return res.status(400).json({ error: 'PDF file is empty or unreadable' });
         }
@@ -83,12 +82,43 @@ router.post('/upload-pdf', auth, adminOnly, upload.single('file'), async (req, r
             return res.status(500).json({ error: 'Failed to extract data from PDF. Please ensure the PDF contains structured voter data.' });
         }
 
+        res.status(500).json({ error: `Preview failed: ${error.message}` });
+    }
+});
+
+/**
+ * POST /admin/upload-pdf/commit
+ * Commit previously extracted data to Google Sheets
+ */
+router.post('/upload-pdf/commit', auth, adminOnly, async (req, res) => {
+    try {
+        console.log('[Upload Commit] Received commit request');
+
+        const { extractedData } = req.body;
+
+        if (!extractedData || typeof extractedData !== 'object') {
+            return res.status(400).json({ error: 'Invalid data format' });
+        }
+
+        // Update Google Sheets
+        const summary = await updateGoogleSheets(extractedData);
+
+        res.json({
+            success: true,
+            message: `Successfully saved ${summary.totalRecords} records across ${summary.totalStates} state(s)`,
+            summary
+        });
+
+        console.log('[Upload Commit] Commit completed successfully');
+
+    } catch (error) {
+        console.error('[Upload Commit] Error:', error.message);
+
         if (error.message.includes('Google Sheet')) {
             return res.status(500).json({ error: 'Failed to update Google Sheets. Please check credentials and permissions.' });
         }
 
-        // Generic error
-        res.status(500).json({ error: `Upload failed: ${error.message}` });
+        res.status(500).json({ error: `Commit failed: ${error.message}` });
     }
 });
 

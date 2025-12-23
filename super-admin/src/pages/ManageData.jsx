@@ -7,6 +7,8 @@ const MASTER_SHEET_URL =
 
 const ManageData = () => {
     const [uploading, setUploading] = useState(false);
+    const [previewData, setPreviewData] = useState(null);
+    const [committing, setCommitting] = useState(false);
     const [uploadResult, setUploadResult] = useState(null);
     const [error, setError] = useState(null);
 
@@ -15,22 +17,50 @@ const ManageData = () => {
 
         setUploading(true);
         setError(null);
+        setPreviewData(null);
         setUploadResult(null);
 
         const formData = new FormData();
         formData.append('file', file);
 
         try {
-            const res = await api.post('/admin/upload-pdf', formData, {
+            // Step 1: Get preview
+            const res = await api.post('/admin/upload-pdf/preview', formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
 
-            setUploadResult(res.data);
+            setPreviewData(res.data);
         } catch (err) {
             setError(err.response?.data?.error || 'Upload failed. Please try again.');
         } finally {
             setUploading(false);
         }
+    };
+
+    const handleCommit = async () => {
+        if (!previewData) return;
+
+        setCommitting(true);
+        setError(null);
+
+        try {
+            // Step 2: Commit to Google Sheets
+            const res = await api.post('/admin/upload-pdf/commit', {
+                extractedData: previewData.preview
+            });
+
+            setUploadResult(res.data);
+            setPreviewData(null); // Clear preview after successful commit
+        } catch (err) {
+            setError(err.response?.data?.error || 'Commit failed. Please try again.');
+        } finally {
+            setCommitting(false);
+        }
+    };
+
+    const handleReject = () => {
+        setPreviewData(null);
+        setError(null);
     };
 
     return (
@@ -116,8 +146,8 @@ const ManageData = () => {
                             id="pdf-upload"
                         />
                         <div className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${uploading
-                                ? 'border-purple-300 bg-purple-50'
-                                : 'border-slate-300 hover:border-purple-500 hover:bg-purple-50'
+                            ? 'border-purple-300 bg-purple-50'
+                            : 'border-slate-300 hover:border-purple-500 hover:bg-purple-50'
                             }`}>
                             {uploading ? (
                                 <div className="flex flex-col items-center gap-4">
@@ -188,6 +218,95 @@ const ManageData = () => {
                     )}
                 </div>
             </div>
+
+            {/* Preview Modal */}
+            {previewData && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+                    <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 duration-500">
+                        {/* Modal Header */}
+                        <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-8 py-6 text-white">
+                            <h2 className="text-2xl font-bold">Review Extracted Data</h2>
+                            <p className="text-purple-100 text-sm mt-1">
+                                {previewData.summary.totalRecords} records found across {previewData.summary.totalStates} state(s)
+                            </p>
+                        </div>
+
+                        {/* Modal Body - Scrollable */}
+                        <div className="p-8 overflow-y-auto max-h-[60vh]">
+                            {previewData.summary.states.map((state) => (
+                                <div key={state.name} className="mb-8 last:mb-0">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h3 className="text-lg font-bold text-slate-900">{state.name}</h3>
+                                        <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-bold">
+                                            {state.recordCount} records
+                                        </span>
+                                    </div>
+
+                                    {/* Data Table */}
+                                    <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                                        <table className="w-full text-left text-sm">
+                                            <thead className="bg-slate-50 border-b border-slate-200">
+                                                <tr>
+                                                    {state.sampleRecords[0] && Object.keys(state.sampleRecords[0]).map((key) => (
+                                                        <th key={key} className="px-4 py-3 text-xs font-bold text-slate-600 uppercase tracking-wider">
+                                                            {key}
+                                                        </th>
+                                                    ))}
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100">
+                                                {state.sampleRecords.map((record, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50">
+                                                        {Object.values(record).map((value, vidx) => (
+                                                            <td key={vidx} className="px-4 py-3 text-slate-700">
+                                                                {value || '-'}
+                                                            </td>
+                                                        ))}
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {state.recordCount > 3 && (
+                                        <p className="text-xs text-slate-500 mt-2 italic">
+                                            Showing first 3 of {state.recordCount} records
+                                        </p>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Modal Footer - Actions */}
+                        <div className="px-8 py-6 bg-slate-50 border-t border-slate-200 flex justify-end gap-4">
+                            <button
+                                onClick={handleReject}
+                                disabled={committing}
+                                className="px-6 py-3 bg-white border-2 border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all disabled:opacity-50"
+                            >
+                                Reject & Cancel
+                            </button>
+                            <button
+                                onClick={handleCommit}
+                                disabled={committing}
+                                className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-bold hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg disabled:opacity-50 flex items-center gap-2"
+                            >
+                                {committing ? (
+                                    <>
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                        Saving to Google Sheets...
+                                    </>
+                                ) : (
+                                    <>
+                                        <CheckCircle className="w-4 h-4" />
+                                        Approve & Save to Sheets
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
