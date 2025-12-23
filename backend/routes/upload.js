@@ -52,21 +52,25 @@ const upload = multer({
  * POST /admin/upload-document/preview
  * Upload document (PDF/Excel/Word/CSV) and get preview of extracted data
  */
-router.post('/upload-document/preview', auth, adminOnly, upload.single('file'), async (req, res) => {
+router.post('/upload-document/preview', auth, adminOnly, async (req, res) => {
     try {
-        console.log('[Upload Preview] Received document upload request');
+        console.log('[Upload Preview] Received JSON data from frontend');
 
-        // Validate file
-        if (!req.file) {
-            return res.status(400).json({ error: 'No file uploaded' });
+        // 1. Extract data from request body (no longer using req.file)
+        const { fileName, fileData } = req.body;
+
+        // 2. Validate the incoming structure
+        if (!fileData || !fileData.content) {
+            return res.status(400).json({ error: 'No document content provided in the request body.' });
         }
 
-        console.log(`[Upload Preview] File: ${req.file.originalname}, Type: ${req.file.mimetype}, Size: ${req.file.size} bytes`);
+        console.log(`[Upload Preview] Processing ${fileData.type} for file: ${fileName}`);
 
-        // Process document with OpenAI
-        const extractedData = await processDocumentWithOpenAI(req.file.buffer, req.file.mimetype);
-
-        // Return preview data
+        // 3. Process the pre-parsed text/JSON with OpenAI
+        // Note: We pass the whole fileData object and the fileName string
+        const extractedData = await processDocumentWithOpenAI(fileData, fileName);
+        console.log("Extracted Data for Preview:", extractedData);
+        // 4. Return preview data with the summary logic
         res.json({
             success: true,
             preview: extractedData,
@@ -76,25 +80,22 @@ router.post('/upload-document/preview', auth, adminOnly, upload.single('file'), 
                 states: Object.entries(extractedData).map(([name, records]) => ({
                     name,
                     recordCount: records.length,
-                    sampleRecords: records.slice(0, 3) // First 3 records as sample
+                    sampleRecords: records
                 }))
             }
         });
 
-        console.log('[Upload Preview] Preview generated successfully');
+        console.log('[Upload Preview] Preview generated successfully via OpenAI');
 
     } catch (error) {
         console.error('[Upload Preview] Error:', error.message);
 
-        if (error.message.includes('appears to be empty')) {
-            return res.status(400).json({ error: 'Document file is empty or unreadable' });
+        // Handle specific OpenAI or Parsing errors
+        if (error.message.includes('insufficient_quota')) {
+            return res.status(402).json({ error: 'OpenAI API quota exceeded.' });
         }
 
-        if (error.message.includes('Unsupported file type')) {
-            return res.status(400).json({ error: error.message });
-        }
-
-        res.status(500).json({ error: `Preview failed: ${error.message}` });
+        res.status(500).json({ error: `AI Extraction failed: ${error.message}` });
     }
 });
 

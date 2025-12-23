@@ -1,6 +1,14 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { FileSpreadsheet, ExternalLink, Info, Upload, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import api from '../services/api';
+import * as XLSX from 'xlsx';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// 1. Import the worker correctly using Vite's ?url syntax
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+
+// 2. Assign the worker source
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 const MASTER_SHEET_URL =
     'https://docs.google.com/spreadsheets/d/1wCsebIUQi_YZgYCAsfQyAvyRm3cS2r3OaiDvpkZ8Vyo/edit?gid=0#gid=0';
@@ -12,26 +20,74 @@ const ManageData = () => {
     const [uploadResult, setUploadResult] = useState(null);
     const [error, setError] = useState(null);
 
-    const handleFileUpload = async (file) => {
+    const handleFileUpload = async (event) => {
+        const file = event.target.files[0];
         if (!file) return;
-
         setUploading(true);
         setError(null);
-        setPreviewData(null);
-        setUploadResult(null);
-
-        const formData = new FormData();
-        formData.append('file', file);
 
         try {
-            // Step 1: Get preview
-            const res = await api.post('/admin/upload-document/preview', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
+            let parsedData = null;
+            let fileType = file.name.split('.').pop().toLowerCase();
 
-            setPreviewData(res.data);
+            if (['xlsx', 'xls', 'csv'].includes(fileType)) {
+                // Parse Excel/CSV to JSON Array
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data);
+                const sheetName = workbook.SheetNames[0];
+                const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+                parsedData = { type: 'structured', content: json };
+            }
+            else if (fileType === 'pdf') {
+                const arrayBuffer = await file.arrayBuffer();
+                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+                const pdf = await loadingTask.promise;
+
+                let pagesData = [];
+                let fullTextConcatenated = "";
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    const pageText = textContent.items.map(item => item.str).join(' ');
+
+                    pagesData.push({ page: i, content: pageText });
+                    fullTextConcatenated += pageText + "\n";
+                }
+
+                parsedData = {
+                    type: 'pdf_text',
+                    content: fullTextConcatenated,
+                    metadata: { totalPages: pdf.numPages, structure: pagesData }
+                };
+            }
+            // --- NEW TXT FILE LOGIC ---
+            else if (fileType === 'txt') {
+                const text = await file.text();
+                parsedData = {
+                    type: 'text',
+                    content: text
+                };
+            }
+
+            // --- SEND TO API ---
+            if (parsedData) {
+                console.log('parsedData', parsedData);
+                const res = await api.post('/admin/upload-document/preview', {
+                    fileName: file.name,
+                    fileData: parsedData
+                });
+
+                setPreviewData(res.data);
+                console.log("Extracted Data for Preview:", res.data);
+            } else {
+                throw new Error("Unsupported file format");
+            }
+
         } catch (err) {
-            setError(err.response?.data?.error || 'Upload failed. Please try again.');
+            console.error("Parsing Error:", err);
+            setError(`Failed to parse ${file.name.split('.').pop().toUpperCase()}. Ensure the file is not corrupted.`);
+            event.target.value = '';
         } finally {
             setUploading(false);
         }
@@ -39,18 +95,14 @@ const ManageData = () => {
 
     const handleCommit = async () => {
         if (!previewData) return;
-
         setCommitting(true);
         setError(null);
-
         try {
-            // Step 2: Commit to Google Sheets
             const res = await api.post('/admin/upload-document/commit', {
                 extractedData: previewData.preview
             });
-
             setUploadResult(res.data);
-            setPreviewData(null); // Clear preview after successful commit
+            setPreviewData(null);
         } catch (err) {
             setError(err.response?.data?.error || 'Commit failed. Please try again.');
         } finally {
@@ -73,52 +125,6 @@ const ManageData = () => {
                     Centralized data source for all users
                 </p>
             </header>
-
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
-                {/* Header Banner */}
-                <div className="bg-black px-10 py-8 text-white">
-                    <div className="flex items-center gap-5">
-                        <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center">
-                            <FileSpreadsheet className="w-8 h-8" />
-                        </div>
-                        <div>
-                            <h2 className="text-2xl font-bold">Global Data Registry</h2>
-                            <p className="text-blue-100 text-sm mt-1">
-                                Changes here affect everyone
-                            </p>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Warning */}
-                <div className="bg-amber-50 px-10 py-5 border-b border-amber-100">
-                    <div className="flex items-start gap-4">
-                        <Info className="w-5 h-5 text-amber-700 mt-0.5" />
-                        <p className="text-sm text-amber-800">
-                            This is the master data source. Edits impact all users after they sync.
-                        </p>
-                    </div>
-                </div>
-
-                {/* Action */}
-                <div className="p-10">
-                    <a
-                        href={MASTER_SHEET_URL}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center justify-center gap-3 w-full py-5 px-8 bg-black text-white rounded-2xl font-bold uppercase tracking-wider hover:bg-blue-700 transition-colors shadow-md"
-                    >
-                        <ExternalLink className="w-5 h-5" />
-                        Open Google Sheet
-                    </a>
-
-                    <p className="text-center text-xs text-slate-400 mt-6">
-                        Source: <a href={MASTER_SHEET_URL} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{MASTER_SHEET_URL}</a>
-                    </p>
-                </div>
-            </div>
-
-            {/* PDF Upload Section */}
             <div className="mt-8 bg-white rounded-3xl border border-slate-200 shadow-lg overflow-hidden">
                 <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-10 py-6 text-white">
                     <div className="flex items-center gap-4">
@@ -127,33 +133,27 @@ const ManageData = () => {
                         </div>
                         <div>
                             <h2 className="text-xl font-bold">Upload PDF Data</h2>
-                            <p className="text-purple-100 text-sm mt-0.5">
-                                Gemini AI will extract and organize by state
-                            </p>
+                            <p className="text-purple-100 text-sm mt-0.5">Gemini AI will extract and organize by state</p>
                         </div>
                     </div>
                 </div>
 
                 <div className="p-10">
-                    {/* Upload Dropzone */}
                     <label className="block">
                         <input
                             type="file"
-                            accept=".pdf,.xlsx,.xls,.docx,.csv,.jpg,.jpeg,.png"
-                            onChange={(e) => handleFileUpload(e.target.files[0])}
+                            accept=".pdf,.xlsx,.xls,.csv"
+                            onChange={handleFileUpload}
                             disabled={uploading}
                             className="hidden"
                             id="document-upload"
                         />
-                        <div className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${uploading
-                            ? 'border-purple-300 bg-purple-50'
-                            : 'border-slate-300 hover:border-purple-500 hover:bg-purple-50'
-                            }`}>
+                        <div className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${uploading ? 'border-purple-300 bg-purple-50' : 'border-slate-300 hover:border-purple-500 hover:bg-purple-50'}`}>
                             {uploading ? (
                                 <div className="flex flex-col items-center gap-4">
                                     <Loader2 className="w-12 h-12 text-purple-600 animate-spin" />
-                                    <p className="text-sm font-bold text-purple-900">Processing with OpenAI...</p>
-                                    <p className="text-xs text-purple-600">Extracting data and organizing by state</p>
+                                    <p className="text-sm font-bold text-purple-900">Processing Document...</p>
+                                    <p className="text-xs text-purple-600">Extracting data for AI analysis</p>
                                 </div>
                             ) : (
                                 <div className="flex flex-col items-center gap-4">
@@ -161,19 +161,14 @@ const ManageData = () => {
                                         <Upload className="w-8 h-8 text-purple-600" />
                                     </div>
                                     <div>
-                                        <p className="text-base font-bold text-slate-900 mb-1">
-                                            Click to upload document or drag and drop
-                                        </p>
-                                        <p className="text-sm text-slate-500">
-                                            PDF, Excel, Word, CSV, or Images (JPG, PNG), max 10MB
-                                        </p>
+                                        <p className="text-base font-bold text-slate-900 mb-1">Click to upload or drag and drop</p>
+                                        <p className="text-sm text-slate-500">PDF, Excel, or CSV</p>
                                     </div>
                                 </div>
                             )}
                         </div>
                     </label>
 
-                    {/* Success Result */}
                     {uploadResult && (
                         <div className="mt-6 p-6 bg-emerald-50 border border-emerald-200 rounded-2xl">
                             <div className="flex items-start gap-4">
@@ -204,34 +199,24 @@ const ManageData = () => {
                         </div>
                     )}
 
-                    {/* Error Display */}
                     {error && (
                         <div className="mt-6 p-6 bg-red-50 border border-red-200 rounded-2xl">
                             <div className="flex items-start gap-4">
                                 <XCircle className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" />
-                                <div>
-                                    <p className="text-sm font-bold text-red-900 mb-1">Upload Failed</p>
-                                    <p className="text-sm text-red-700">{error}</p>
-                                </div>
+                                <p className="text-sm text-red-700">{error}</p>
                             </div>
                         </div>
                     )}
                 </div>
             </div>
 
-            {/* Preview Modal */}
+            {/* Preview Modal remains as per your original logic */}
             {previewData && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
-                    <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-8 duration-500">
-                        {/* Modal Header */}
+                    <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-3xl shadow-2xl overflow-hidden">
                         <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-8 py-6 text-white">
                             <h2 className="text-2xl font-bold">Review Extracted Data</h2>
-                            <p className="text-purple-100 text-sm mt-1">
-                                {previewData.summary.totalRecords} records found across {previewData.summary.totalStates} state(s)
-                            </p>
                         </div>
-
-                        {/* Modal Body - Scrollable */}
                         <div className="p-8 overflow-y-auto max-h-[60vh]">
                             {previewData.summary.states.map((state) => (
                                 <div key={state.name} className="mb-8 last:mb-0">
@@ -276,33 +261,9 @@ const ManageData = () => {
                                 </div>
                             ))}
                         </div>
-
-                        {/* Modal Footer - Actions */}
                         <div className="px-8 py-6 bg-slate-50 border-t border-slate-200 flex justify-end gap-4">
-                            <button
-                                onClick={handleReject}
-                                disabled={committing}
-                                className="px-6 py-3 bg-white border-2 border-slate-300 text-slate-700 rounded-xl font-bold hover:bg-slate-50 transition-all disabled:opacity-50"
-                            >
-                                Reject & Cancel
-                            </button>
-                            <button
-                                onClick={handleCommit}
-                                disabled={committing}
-                                className="px-6 py-3 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-bold hover:from-purple-700 hover:to-purple-800 transition-all shadow-lg disabled:opacity-50 flex items-center gap-2"
-                            >
-                                {committing ? (
-                                    <>
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                        Saving to Google Sheets...
-                                    </>
-                                ) : (
-                                    <>
-                                        <CheckCircle className="w-4 h-4" />
-                                        Approve & Save to Sheets
-                                    </>
-                                )}
-                            </button>
+                            <button onClick={handleReject} className="px-6 py-3 bg-white border-2 border-slate-300 text-slate-700 rounded-xl font-bold">Reject</button>
+                            <button onClick={handleCommit} className="px-6 py-3 bg-purple-600 text-white rounded-xl font-bold">Approve & Save</button>
                         </div>
                     </div>
                 </div>
