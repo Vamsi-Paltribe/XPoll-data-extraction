@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import {
     Shield, Coins,
-    LogOut, Database, LayoutGrid, Wallet
+    LogOut, Database, LayoutGrid, Wallet, UserPlus
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -20,7 +20,6 @@ const AdminLayout = ({ children }) => {
     });
 
     const handleLogout = () => {
-        localStorage.removeItem('token');
         window.location.href = '/login';
     };
 
@@ -51,7 +50,7 @@ const AdminLayout = ({ children }) => {
                             </div>
                             <div>
                                 <h1 className="text-lg font-bold tracking-tight text-slate-900 leading-none">
-                                    GOVERNANCE <span className="text-slate-400 font-medium">TERMINAL</span>
+                                    XPOLL <span className="text-slate-400 font-medium">TERMINAL</span>
                                 </h1>
                             </div>
                         </Link>
@@ -60,6 +59,7 @@ const AdminLayout = ({ children }) => {
                             <NavLink to="/" icon={<LayoutGrid className="w-4 h-4" />} label="Command Center" />
                             <NavLink to="/manage" icon={<Database className="w-4 h-4" />} label="Manage Sheets" />
                             <NavLink to="/ledger" icon={<Wallet className="w-4 h-4" />} label="Financial Ledger" />
+                            <NavLink to="/create-admin" icon={<UserPlus className="w-4 h-4" />} label="Add Admin" />
                         </nav>
                     </div>
 

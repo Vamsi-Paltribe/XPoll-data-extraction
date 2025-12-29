@@ -14,32 +14,24 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }) => {
     const [selectedCities, setSelectedCities] = useState([]);
     const [selectedHeaders, setSelectedHeaders] = useState([]);
 
-    const stateOptions = [
-        { code: 'AZ', name: 'Arizona' }, { code: 'CA', name: 'California' }, { code: 'FL', name: 'Florida' },
-        { code: 'GA', name: 'Georgia' }, { code: 'MI', name: 'Michigan' }, { code: 'NV', name: 'Nevada' },
-        { code: 'NY', name: 'New York' }, { code: 'PA', name: 'Pennsylvania' }, { code: 'TX', name: 'Texas' },
-        { code: 'WI', name: 'Wisconsin' }
-    ];
-
-    const cityOptions = [
-        'Phoenix', 'Los Angeles', 'San Francisco', 'Miami', 'Atlanta',
-        'Detroit', 'Las Vegas', 'New York City', 'Philadelphia',
-        'Houston', 'Milwaukee', 'Austin', 'Denver', 'Seattle',
-        'Dallas', 'Chicago', 'Boston', 'Orlando', 'Nashville'
-    ].sort();
-
-    // Queries
-    const { data: stateStats = {}, isLoading: loadingStats } = useQuery({
-        queryKey: ['bucket-state-stats', bucketId],
+    // Dynamic Data Fetching
+    const { data: directory, isLoading: loadingDirectory } = useQuery({
+        queryKey: ['global-directory'],
         queryFn: async () => {
-            const res = await api.get(`/buckets/${bucketId}/stats/states`);
+            const res = await api.get('/buckets/global/directory');
             return res.data;
         },
         enabled: isOpen,
+        staleTime: 5 * 60 * 1000 // Cache for 5 mins
     });
+
+    const stateOptions = directory?.states || [];
+    const cityOptions = directory?.cities || [];
 
     const { data: availableHeaders = [], mutate: fetchHeaders } = useMutation({
         mutationFn: async () => {
+            // We can actually use the directory endpoint for headers too if we optimized it, 
+            // but let's stick to the specific header endpoint for now as it's separate logic
             const res = await api.post(`/buckets/${bucketId}/headers`, {
                 filters: { states: [], cities: [] }
             });
@@ -151,31 +143,47 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }) => {
                             </div>
 
                             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-                                {stateOptions.map(st => {
-                                    const isSelected = selectedStates.includes(st.code);
-                                    const count = stateStats[st.code] || 0;
-                                    return (
-                                        <button
-                                            key={st.code}
-                                            onClick={() => toggleState(st.code)}
-                                            className={clsx(
-                                                "p-5 rounded-2xl border transition-all text-left group",
-                                                isSelected
-                                                    ? "bg-slate-900 border-slate-900 text-white shadow-lg"
-                                                    : "bg-white border-slate-200 hover:border-slate-300"
-                                            )}
-                                        >
-                                            <div className={clsx("text-[9px] font-bold tracking-widest uppercase mb-1", isSelected ? "text-slate-400" : "text-slate-300")}>{st.code}</div>
-                                            <div className="text-sm font-bold truncate mb-3">{st.name}</div>
-                                            <div className="flex items-center gap-2">
-                                                <div className={clsx("w-1 h-1 rounded-full", isSelected ? "bg-blue-400" : "bg-slate-200")}></div>
-                                                <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">
-                                                    {loadingStats ? '••' : `${count} Rec`}
-                                                </span>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
+                                {loadingDirectory ? (
+                                    <div className="col-span-full py-12 flex flex-col items-center justify-center text-slate-400">
+                                        <div className="w-8 h-8 border-2 border-slate-200 border-t-slate-400 rounded-full animate-spin mb-2" />
+                                        <p className="text-xs font-bold uppercase tracking-widest">Scanning Global Registry...</p>
+                                    </div>
+                                ) : stateOptions.length === 0 ? (
+                                    <div className="col-span-full py-8 text-center text-slate-400 text-sm">
+                                        No Master Data available yet.
+                                    </div>
+                                ) : (
+                                    stateOptions.map(st => {
+                                        const isSelected = selectedStates.includes(st.name);
+                                        const count = st.count || 0;
+                                        // Visual code just for display
+                                        const displayCode = st.code || st.name.substring(0, 2).toUpperCase();
+
+                                        return (
+                                            <button
+                                                key={st.name}
+                                                onClick={() => toggleState(st.name)}
+                                                className={clsx(
+                                                    "p-5 rounded-2xl border transition-all text-left group",
+                                                    isSelected
+                                                        ? "bg-slate-900 border-slate-900 text-white shadow-lg"
+                                                        : "bg-white border-slate-200 hover:border-slate-300"
+                                                )}
+                                            >
+                                                <div className={clsx("text-[9px] font-bold tracking-widest uppercase mb-1", isSelected ? "text-slate-400" : "text-slate-300")}>
+                                                    {displayCode}
+                                                </div>
+                                                <div className="text-sm font-bold truncate mb-3" title={st.name}>{st.name}</div>
+                                                <div className="flex items-center gap-2">
+                                                    <div className={clsx("w-1 h-1 rounded-full", isSelected ? "bg-blue-400" : "bg-slate-200")}></div>
+                                                    <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">
+                                                        {count} Rec
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        );
+                                    })
+                                )}
                             </div>
                         </div>
 

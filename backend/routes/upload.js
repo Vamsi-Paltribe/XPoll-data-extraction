@@ -4,7 +4,8 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const { processDocumentWithOpenAI } = require('../services/openaiProcessor');
 // const { processPdfWithGemini } = require('../services/geminiProcessor');
-const { updateGoogleSheets } = require('../services/googleSheetsService');
+// const { processPdfWithGemini } = require('../services/geminiProcessor');
+// const { updateGoogleSheets } = require('../services/googleSheetsService');
 const { extractMappingLogic, applyLogicToDataset } = require('../services/logicExtractor');
 
 const router = express.Router();
@@ -331,9 +332,13 @@ function generateSummary(groupedData) {
     };
 }
 
+// Import Models if not already there (CustomerRecord, Bucket) -- Check top of file
+const CustomerRecord = require('../models/CustomerRecord');
+const Bucket = require('../models/Bucket');
+
 /**
  * POST /admin/upload-document/commit
- * Commit previously extracted data to Google Sheets
+ * Commit previously extracted data to MongoDB (Master Global Records)
  */
 router.post('/upload-document/commit', auth, adminOnly, async (req, res) => {
     try {
@@ -345,12 +350,94 @@ router.post('/upload-document/commit', auth, adminOnly, async (req, res) => {
             return res.status(400).json({ error: 'Invalid data format' });
         }
 
-        // Update Google Sheets
-        const summary = await updateGoogleSheets(extractedData);
+        // extractedData structure: { "California": [record1, record2], "Texas": [...] }
+        const states = Object.keys(extractedData);
+        let totalRecords = 0;
+
+        for (const stateName of states) {
+            const records = extractedData[stateName];
+            if (!records || records.length === 0) continue;
+
+            console.log(`[Upload Commit] Processing ${records.length} records for ${stateName}`);
+
+            // 1. Find or Create Global Bucket for this State
+            let bucket = await Bucket.findOne({ name: stateName, type: 'global' });
+
+            if (!bucket) {
+                console.log(`[Upload Commit] Creating new Global Bucket for ${stateName}`);
+                bucket = new Bucket({
+                    name: stateName,
+                    description: `Master Data Registry for ${stateName}`,
+                    type: 'global',
+                    createdBy: req.user.id,
+                    sourceUrl: 'UPLOADED_VIA_ADMIN_DASHBOARD'
+                });
+                await bucket.save();
+            }
+
+            // 2. Prepare Records for Bulk Insert
+            const customerRecords = records.map(record => ({
+                bucketId: bucket._id,
+                data: record, // Store the flexible data here
+                keyHash: record.keyHash || Math.random().toString(36).substring(7), // Fallback
+                history: [{
+                    action: 'imported',
+                    details: `Imported via Admin Upload by ${req.user.id}`
+                }]
+            }));
+
+            // 3. Bulk Insert
+            // Note: ordered: false prevents one failure from stopping the whole batch
+            let insertedCount = 0;
+            try {
+                const result = await CustomerRecord.insertMany(customerRecords, { ordered: false });
+                insertedCount = result.length;
+            } catch (err) {
+                if (err.writeErrors) {
+                    insertedCount = err.insertedDocs.length;
+                    console.log(`[Upload Commit] Inserted ${insertedCount} records. (${err.writeErrors.length} duplicates skipped)`);
+                } else {
+                    throw err;
+                }
+            }
+
+            // 4. Update METADATA (Headers & Cities) - O(1) Read Optimization
+            const existingHeaders = new Set(bucket.availableHeaders || []);
+            const existingCities = new Set(bucket.availableCities || []);
+
+            records.forEach(rec => {
+                // Headers
+                Object.keys(rec).forEach(k => {
+                    if (!k.startsWith('_') && k !== 'bucketId' && k !== 'keyHash') {
+                        existingHeaders.add(k);
+                    }
+                });
+                // Cities
+                const city = rec.City || rec.CITY || rec.city;
+                if (city && typeof city === 'string') {
+                    existingCities.add(city.trim());
+                }
+            });
+
+            bucket.availableHeaders = Array.from(existingHeaders).sort();
+            bucket.availableCities = Array.from(existingCities).sort();
+            bucket.lastSyncedAt = new Date();
+
+            await bucket.save();
+            console.log(`[Upload Commit] Updated metadata for ${bucket.name}: ${bucket.availableHeaders.length} headers, ${bucket.availableCities.length} cities`);
+
+            totalRecords += insertedCount;
+        }
+
+        const summary = {
+            totalStates: states.length,
+            totalRecords: totalRecords,
+            states: states.map(s => ({ name: s, recordCount: extractedData[s].length }))
+        };
 
         res.json({
             success: true,
-            message: `Successfully saved ${summary.totalRecords} records across ${summary.totalStates} state(s)`,
+            message: `Successfully saved ${totalRecords} Master Records across ${states.length} state(s) to Database`,
             summary
         });
 
@@ -358,11 +445,6 @@ router.post('/upload-document/commit', auth, adminOnly, async (req, res) => {
 
     } catch (error) {
         console.error('[Upload Commit] Error:', error.message);
-
-        if (error.message.includes('Google Sheet')) {
-            return res.status(500).json({ error: 'Failed to update Google Sheets. Please check credentials and permissions.' });
-        }
-
         res.status(500).json({ error: `Commit failed: ${error.message}` });
     }
 });

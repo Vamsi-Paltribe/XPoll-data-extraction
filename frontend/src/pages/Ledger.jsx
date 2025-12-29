@@ -1,4 +1,3 @@
-import React from 'react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import {
@@ -36,14 +35,15 @@ const Ledger = () => {
         </div>
     );
 
+
     return (
         <div className="max-w-5xl mx-auto">
-            <header className="mb-12">
+            <header className="mb-6">
                 <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-2">My Wallet</h1>
                 <p className="text-slate-500 font-medium">Manage your token balance and view transaction history.</p>
             </header>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-12">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mb-6">
                 {/* Balance Card */}
                 <div className="bg-slate-900 rounded-[2.5rem] p-8 shadow-2xl relative overflow-hidden text-white flex flex-col justify-between h-[280px]">
                     <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-amber-400 opacity-[0.15] rounded-full translate-x-1/3 -translate-y-1/3 blur-[80px]" />

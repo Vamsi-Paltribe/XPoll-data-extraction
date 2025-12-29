@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import api from '../services/api';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -6,14 +6,9 @@ import {
     Plus,
     Database,
     Search,
-    Clock,
-    Users,
-    X,
-    LayoutGrid,
-    ArrowRight,
-    ChevronRight
+    Clock, X,
+    LayoutGrid, ChevronRight
 } from 'lucide-react';
-import clsx from 'clsx';
 
 const Dashboard = () => {
     const queryClient = useQueryClient();
@@ -39,7 +34,7 @@ const Dashboard = () => {
             setNewRegistry({ name: '', description: '' });
         },
         onError: () => {
-            alert('Failed to initialize registry');
+            window.alert('Failed to initialize registry');
         }
     });
 
@@ -54,7 +49,7 @@ const Dashboard = () => {
 
     return (
         <div className="min-h-screen bg-background p-12">
-            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-16">
+            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-4">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Data Registries</h1>
                     <p className="text-slate-500 text-sm mt-1">Monitor and manage active system nodes and their ingestion streams.</p>

@@ -6,6 +6,7 @@ import Ledger from './pages/Ledger';
 import UserDetail from './pages/UserDetail';
 import ManageData from './pages/ManageData';
 import AdminLayout from './components/AdminLayout';
+import CreateAdmin from './pages/CreateAdmin';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,7 +18,7 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const isAuthenticated = !!localStorage.getItem('token');
+  const isAuthenticated = !!window.localStorage.getItem('token');
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -40,6 +41,10 @@ function App() {
             path="/manage"
             element={isAuthenticated ? <AdminLayout><ManageData /></AdminLayout> : <Navigate to="/login" />}
           />
+          <Route
+            path="/create-admin"
+            element={isAuthenticated ? <AdminLayout><CreateAdmin /></AdminLayout> : <Navigate to="/login" />}
+          />
         </Routes>
       </Router>
     </QueryClientProvider>
@@ -47,3 +52,4 @@ function App() {
 }
 
 export default App;
+

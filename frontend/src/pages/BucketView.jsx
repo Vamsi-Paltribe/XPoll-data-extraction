@@ -4,10 +4,12 @@ import api from '../services/api';
 import clsx from 'clsx';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import SyncModal from '../components/SyncModal';
+import DataImportModal from '../components/DataImportModal';
 import {
     Database, Layers, Settings, ChevronRight, Zap, Trash2, Plus, Database as DataIcon, Info, CheckCircle2,
     Cpu,
-    Clock
+    Clock,
+    Upload
 } from 'lucide-react';
 
 const TabButton = ({ active, onClick, label, count, icon: Icon }) => (
@@ -37,6 +39,7 @@ const BucketView = () => {
     const queryClient = useQueryClient();
     const [activeTab, setActiveTab] = useState('processed');
     const [showSyncModal, setShowSyncModal] = useState(false);
+    const [showImportModal, setShowImportModal] = useState(false);
     const [newParameter, setNewParameter] = useState({ name: '', type: 'text', mapping: '' });
 
     // Queries
@@ -303,6 +306,13 @@ const BucketView = () => {
                             <span className="text-xs font-bold text-slate-900">{bucket?.lastSyncedAt ? new Date(bucket.lastSyncedAt).toLocaleString() : 'PENDING'}</span>
                         </div>
                         <button
+                            onClick={() => setShowImportModal(true)}
+                            className="bg-white border border-slate-200 text-slate-900 px-6 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest hover:border-slate-900 transition-all flex items-center gap-2"
+                        >
+                            Import Data
+                            <Upload className="w-4 h-4" />
+                        </button>
+                        <button
                             onClick={() => setShowSyncModal(true)}
                             className="bg-slate-900 text-white px-8 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10 flex items-center gap-2 group"
                         >
@@ -485,6 +495,13 @@ const BucketView = () => {
                 onSync={(filters) => syncMutation.mutate(filters)}
                 isSyncing={syncMutation.isLoading}
             />
+
+            {showImportModal && (
+                <DataImportModal
+                    bucket={bucket}
+                    onClose={() => setShowImportModal(false)}
+                />
+            )}
         </div>
     );
 };

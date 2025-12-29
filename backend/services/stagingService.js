@@ -1,8 +1,7 @@
-const axios = require('axios');
-const { parse } = require('csv-parse/sync');
 const CustomerRecord = require('../models/CustomerRecord');
 const StagingRecord = require('../models/StagingRecord');
 const SyncBatch = require('../models/SyncBatch');
+const Bucket = require('../models/Bucket');
 
 const stateMap = {
     'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
@@ -18,161 +17,104 @@ const stateMap = {
 };
 
 /**
- * Extracts the Spreadsheet ID from a Google Sheets URL
+ * Fetch records from Global Buckets (Database) based on filters
+ * Replaces old Google Sheet fetching
  */
-const extractSpreadsheetId = (url) => {
-    const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-    return match ? match[1] : null;
-};
-
-/**
- * Scrapes the spreadsheet HTML to find all sheet names and GIDs
- */
-const fetchSheetList = async (spreadsheetId) => {
+const fetchGlobalRecords = async (filters = {}) => {
     try {
-        const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
-        const response = await axios.get(url);
-        const html = response.data;
+        let globalBuckets = [];
 
-        // Google Sheets embeds sheet data in a JSON-like structure in the HTML
-        const sheetDataMatch = html.match(/bootstrapData\s*=\s*({.+?});/);
-        const dataStr = sheetDataMatch[1];
-        const data = JSON.parse(dataStr);
-
-        let sheets = [];
-
-        // Strategy 1: Standard paths
-        const changes = data.changes?.v || (data.v && data.v.changes?.v);
-        if (changes && Array.isArray(changes)) {
-            sheets = changes.map(s => ({ gid: s[0].toString(), name: s[1] }));
-        }
-        // Strategy 2: Search in topsnapshot
-        else if (data.changes?.topsnapshot) {
-            data.changes.topsnapshot.forEach(shot => {
-                const s = shot[2];
-                if (typeof s === 'string' && s.includes('[')) {
-                    // Try to extract from stringified JSON in shot
-                    const match = s.match(/\[\d+,\d+,"([^"]+)",\[{"1":\[\[\d+,\d+,"([^"]+)"/);
-                    if (match) sheets.push({ gid: match[1], name: match[2] });
-                }
+        // 1. Find relevant Global Buckets
+        if (filters.states && filters.states.length > 0) {
+            // Map codes to names if needed, or search both
+            const stateNames = filters.states.flatMap(code => {
+                const name = stateMap[code.toUpperCase()];
+                return name ? [code, name] : [code];
             });
+
+            // Case-insensitive regex match for bucket names
+            const regexQueries = stateNames.map(s => new RegExp(s, 'i'));
+            globalBuckets = await Bucket.find({
+                type: 'global',
+                name: { $in: regexQueries }
+            });
+        } else {
+            // If no state filter, fetch ALL global buckets (careful with size!)
+            // For safety, maybe default to none or limit? 
+            // Let's fetch all but warn usage.
+            globalBuckets = await Bucket.find({ type: 'global' });
         }
 
-        // Strategy 3: Regex fallback on the raw string (very robust)
-        if (sheets.length === 0) {
-            // Look for patterns like [0,0,"<gid>",[{"1":[[0,0,"<name>"]]
-            // Handle both \" and " depending on how JSON was parsed/extracted
-            const regex = /\[0,0,["\\]+([\w-]+)["\\]+,\[\{["\\]+1["\\]+:\[\[0,0,["\\]+([^"\\]+)["\\]+/g;
-            let m;
-            while ((m = regex.exec(dataStr)) !== null) {
-                sheets.push({ gid: m[1], name: m[2] });
-            }
+        if (globalBuckets.length === 0) {
+            console.log('[FetchGlobal] No matching Global Buckets found for filters:', filters);
+            return [];
         }
 
-        // Remove duplicates and filter out noise
-        sheets = sheets.filter((s, index, self) =>
-            s.name && s.gid && self.findIndex(t => t.gid === s.gid) === index
-        );
+        const bucketIds = globalBuckets.map(b => b._id);
+        console.log(`[FetchGlobal] Found ${bucketIds.length} buckets. Fetching records...`);
 
-        return sheets.length > 0 ? sheets : [{ gid: '0', name: 'Sheet1' }];
+        // 2. Fetch Records
+        let query = { bucketId: { $in: bucketIds } };
+
+        // Optional limit for preview/headers
+        const limit = filters.limitRows || 0;
+
+        const records = await CustomerRecord.find(query)
+            .limit(limit)
+            .lean(); // Faster
+
+        // 3. Map to flattened structure for compatibility
+        return records.map(r => {
+            const flat = { ...r.data };
+            flat._id = r._id; // Keep handy
+            flat._bucketName = globalBuckets.find(b => b._id.equals(r.bucketId))?.name;
+            return flat;
+        });
+
     } catch (error) {
-        console.error("Error fetching sheet list:", error.message);
-        return [{ gid: '0', name: 'Sheet1' }];
-    }
-};
-
-const fetchAndParseSheet = async (url, options = {}) => {
-    try {
-        const spreadsheetId = extractSpreadsheetId(url);
-        const { targetSheets, limitRows } = options;
-        if (!spreadsheetId) {
-            const response = await axios.get(url);
-            return parse(response.data, { columns: true, skip_empty_lines: true });
-        }
-
-        const allSheets = await fetchSheetList(spreadsheetId);
-        let sheetsToProcess = allSheets;
-
-        if (targetSheets && targetSheets.length > 0) {
-            // Case-insensitive matching for sheet names
-            // Expand state codes (e.g., "NY") to full names (e.g., "New York") for better matching
-            const targets = targetSheets.flatMap(s => {
-                const code = s.toUpperCase();
-                const name = stateMap[code];
-                return name ? [code.toLowerCase(), name.toLowerCase()] : [s.toLowerCase()];
-            });
-
-            sheetsToProcess = allSheets.filter(s =>
-                targets.some(t => s.name.toLowerCase().includes(t))
-            );
-
-            // If target sheets were specified but none found, return empty rather than falling back
-            if (sheetsToProcess.length === 0) {
-                return [];
-            }
-        }
-
-        let allRecords = [];
-
-        for (const sheet of sheetsToProcess) {
-            console.log(`[Sync] Fetching sheet: ${sheet.name} (GID: ${sheet.gid})`);
-            const csvUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${sheet.gid}`;
-            const response = await axios.get(csvUrl);
-
-            // If we only need headers or a few rows for preview
-            const parseOptions = { columns: true, skip_empty_lines: true };
-            if (limitRows) {
-                // Not strictly supported by csv-parse/sync easily with a simple flag for all formats, 
-                // but we can parse a chunk if needed. For now, we'll parse all and slice or just return if it's small.
-            }
-
-            const records = parse(response.data, parseOptions);
-
-            // Add metadata to each record
-            records.forEach(r => {
-                r._sheetName = sheet.name;
-            });
-
-            allRecords = allRecords.concat(records);
-
-            if (limitRows && allRecords.length >= limitRows) break;
-        }
-        return allRecords;
-    } catch (error) {
-        console.error("Error fetching or parsing sheets:", error.message);
+        console.error("Error fetching global records:", error.message);
         throw error;
     }
 };
 
-const fetchHeaders = async (url, filters = {}) => {
-    // 1. Fetch sheet list
-    const spreadsheetId = extractSpreadsheetId(url);
-    if (!spreadsheetId) return [];
+const fetchHeaders = async (filters = {}) => {
+    try {
+        let globalBuckets = [];
 
-    const sheets = await fetchSheetList(spreadsheetId);
+        // 1. Find relevant Global Buckets
+        if (filters.states && filters.states.length > 0) {
+            const stateNames = filters.states.flatMap(code => {
+                const name = stateMap[code.toUpperCase()];
+                return name ? [code, name] : [code];
+            });
+            const regexQueries = stateNames.map(s => new RegExp(s, 'i'));
+            globalBuckets = await Bucket.find({
+                type: 'global',
+                name: { $in: regexQueries }
+            }).select('availableHeaders');
+        } else {
+            globalBuckets = await Bucket.find({ type: 'global' }).select('availableHeaders');
+        }
 
-    // 2. Identify target sheets based on state filters
-    let targets = [];
-    if (filters.states && filters.states.length > 0) {
-        targets = filters.states;
-    }
+        if (globalBuckets.length === 0) return [];
 
-    // 3. Fetch first row from matching sheets to get headers
-    const records = await fetchAndParseSheet(url, { targetSheets: targets, limitRows: 1 });
-    if (records.length === 0) return [];
-
-    // 4. Extract unique keys, excluding internal ones
-    const keys = new Set();
-    records.forEach(r => {
-        Object.keys(r).forEach(k => {
-            if (!k.startsWith('_')) keys.add(k);
+        // 2. Aggregate Headers from Metadata
+        const keys = new Set();
+        globalBuckets.forEach(b => {
+            if (b.availableHeaders && Array.isArray(b.availableHeaders)) {
+                b.availableHeaders.forEach(h => keys.add(h));
+            }
         });
-    });
 
-    return Array.from(keys);
+        return Array.from(keys).sort();
+
+    } catch (error) {
+        console.error("Error fetching headers from metadata:", error);
+        return [];
+    }
 };
 
-const syncToStaging = async (bucketId, cloudRecords, filters) => {
+const syncToStaging = async (bucketId, filters) => {
     // 1. Cleanup old pending batches/records
     const pendingBatches = await SyncBatch.find({ bucketId, status: 'pending' });
     const pendingBatchIds = pendingBatches.map(b => b._id);
@@ -187,68 +129,23 @@ const syncToStaging = async (bucketId, cloudRecords, filters) => {
     });
     await newBatch.save();
 
-    // 3. Filter Records
-    let filtered = cloudRecords;
-    console.log(`[Sync] Total records fetched from all sheets: ${cloudRecords.length}`);
+    // 3. Fetch Data from Global Buckets (New Logic)
+    console.log('[Sync] Fetching data from Global Buckets...');
+    let sourceRecords = await fetchGlobalRecords(filters);
+    console.log(`[Sync] Fetched ${sourceRecords.length} records.`);
 
-    if (filters && (filters.states?.length || filters.cities?.length)) {
-        filtered = cloudRecords.filter(rec => {
-            let stateMatch = true;
-            let cityMatch = true;
-
-            // Priority check: If the sheet name matches a state, we trust it highly
-            const sheetName = (rec._sheetName || '').toLowerCase();
-
-            if (filters.states?.length) {
-                stateMatch = filters.states.some(code => {
-                    const name = (stateMap[code] || code).toLowerCase();
-                    const stateCode = code.toLowerCase();
-
-                    // Check sheet name first
-                    if (sheetName.includes(stateCode) || sheetName.includes(name)) return true;
-
-                    // Check row content
-                    const rowStr = JSON.stringify(rec).toLowerCase();
-                    return rowStr.includes(stateCode) || rowStr.includes(name);
-                });
-            }
-
-            if (filters.cities?.length) {
-                cityMatch = filters.cities.some(c => {
-                    const cityKeyword = c.toLowerCase().trim();
-                    if (!cityKeyword) return false;
-
-                    // 1. Check common city fields specifically first (substring match)
-                    const cityVal = (rec.City || rec.CITY || rec.city || rec.Town || '').toLowerCase().trim();
-                    if (cityVal.includes(cityKeyword)) return true;
-
-                    // 2. Check for the keyword as a whole word in any other field
-                    const rowStr = JSON.stringify(rec).toLowerCase();
-                    const wordRegex = new RegExp(`\\b${cityKeyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-                    if (wordRegex.test(rowStr)) return true;
-
-                    // 3. Last fallback: simple substring check on the whole row
-                    return rowStr.includes(cityKeyword);
-                });
-            }
-
-            return stateMatch && cityMatch;
-        });
-        console.log(`[Sync] Filtered to ${filtered.length} records`);
-    }
-
-    // 3.5 Apply Column Selection if provided
-    if (filters && filters.selectedHeaders && filters.selectedHeaders.length > 0) {
-        const headers = filters.selectedHeaders;
-        filtered = filtered.map(rec => {
-            const filteredRec = {};
-            headers.forEach(h => {
-                if (rec.hasOwnProperty(h)) filteredRec[h] = rec[h];
+    // 3.5 Client-side Filtering (Cities, etc) if not handled by DB query
+    // Since our DB schema is flexible (Mixed), we can't easily query distinct fields efficiently 
+    // without precise indexing. So we filter in code as before.
+    if (filters && filters.cities?.length) {
+        sourceRecords = sourceRecords.filter(rec => {
+            return filters.cities.some(c => {
+                const cityKeyword = c.toLowerCase().trim();
+                const cityVal = (rec.City || rec.CITY || rec.city || rec.Town || '').toLowerCase();
+                return cityVal.includes(cityKeyword);
             });
-            // Keep internal metadata
-            filteredRec._sheetName = rec._sheetName;
-            return filteredRec;
         });
+        console.log(`[Sync] Filtered by city to ${sourceRecords.length} records.`);
     }
 
     // 4. Prepare Staging Records
@@ -259,16 +156,37 @@ const syncToStaging = async (bucketId, cloudRecords, filters) => {
 
     let conflictCount = 0;
 
-    for (const rec of filtered) {
-        // More robust extraction of State, City, and Name
-        const state = (rec.State || rec.STATE || rec.state || rec.Province || '').toLowerCase().trim();
-        const city = (rec.City || rec.CITY || rec.city || rec.Town || '').toLowerCase().trim();
+    for (const rec of sourceRecords) {
+        // Robust extraction for KeyHash (Mandatory for conflict detection)
+        const state = (rec.State || rec.STATE || rec.state || '').toLowerCase().trim();
+        const city = (rec.City || rec.CITY || rec.city || '').toLowerCase().trim();
+        const name = (rec.Name || rec.NAME || rec.name || '').toLowerCase().trim();
 
-        // Handling "Candidate" or "Candidate Name" as synonms for "Name"
-        const name = (rec.Name || rec.NAME || rec.name || rec.Candidate || rec['Candidate Name'] || '').toLowerCase().trim();
-
-        // New keyHash logic: [State]|[City]|[Name]
         const keyHash = `${state}|${city}|${name}`;
+
+        // --- TOKEN TRIMMING LOGIC ---
+        let dataToSave = rec;
+
+        if (filters && filters.selectedHeaders && filters.selectedHeaders.length > 0) {
+            dataToSave = {};
+            // Always keep ID/BucketName if needed, but for "data", we only want what user asked.
+            // However, we probably want to keep the "Identity" fields (Name, City, State) implicitly?
+            // The user said "matches only that data".
+            // If they don't select "Phone", we shouldn't save "Phone".
+
+            // We should likely preserve the Key Fields (Name/City/State) to maintain integrity, 
+            // OR blindly trust the user's selection. 
+            // Let's include the selected headers PLUS the key fields if they aren't selected, 
+            // but maybe as hidden properties? 
+            // Actually, for simplicity and strict adherence: ONLY save selected headers.
+            // BUT `keyHash` is stored separately in the schema, so we can still ID the record!
+
+            filters.selectedHeaders.forEach(header => {
+                if (rec[header] !== undefined) {
+                    dataToSave[header] = rec[header];
+                }
+            });
+        }
 
         let status = 'pending';
         let conflictData = null;
@@ -276,14 +194,11 @@ const syncToStaging = async (bucketId, cloudRecords, filters) => {
         if (customerRecordsMap.has(keyHash)) {
             const existingData = customerRecordsMap.get(keyHash);
 
-            // Compare data (excluding our internal _sheetName)
-            const recClean = { ...rec };
-            delete recClean._sheetName;
+            // Basic comparison
+            const recStr = JSON.stringify(dataToSave);
+            const exStr = JSON.stringify(existingData);
 
-            const existingClean = { ...existingData };
-            delete existingClean._sheetName;
-
-            if (JSON.stringify(existingClean) !== JSON.stringify(recClean)) {
+            if (recStr !== exStr) {
                 status = 'conflict';
                 conflictCount++;
                 conflictData = existingData;
@@ -295,7 +210,7 @@ const syncToStaging = async (bucketId, cloudRecords, filters) => {
         batchData.push({
             bucketId,
             batchId: newBatch._id,
-            data: rec,
+            data: dataToSave,
             keyHash,
             status,
             conflictData
@@ -315,4 +230,4 @@ const syncToStaging = async (bucketId, cloudRecords, filters) => {
     return { batchId: newBatch._id, count: batchData.length, conflicts: conflictCount };
 };
 
-module.exports = { syncToStaging, fetchAndParseSheet, extractSpreadsheetId, fetchSheetList, fetchHeaders };
+module.exports = { syncToStaging, fetchGlobalRecords, fetchHeaders };

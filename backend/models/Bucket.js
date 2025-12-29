@@ -22,8 +22,13 @@ const BucketSchema = new mongoose.Schema({
     name: { type: String, required: true },
     description: { type: String },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    type: {
+        type: String,
+        enum: ['private', 'global'],
+        default: 'private'
+    },
     records: [RecordSchema],
-    sourceUrl: { type: String, default: 'https://docs.google.com/spreadsheets/d/1wCsebIUQi_YZgYCAsfQyAvyRm3cS2r3OaiDvpkZ8Vyo/edit?gid=0#gid=0' },
+    sourceUrl: { type: String, default: '' },
     lastSyncedAt: { type: Date },
     lastSyncParams: {
         states: [String],
@@ -35,7 +40,11 @@ const BucketSchema = new mongoose.Schema({
         name: { type: String, required: true },
         type: { type: String, default: 'text' }, // text, number, date
         mapping: { type: String } // Column name in source sheet
-    }]
+    }],
+
+    // Auto-Discovered Metadata (Cached for O(1) Access)
+    availableHeaders: { type: [String], default: [] },
+    availableCities: { type: [String], default: [] }
 }, { timestamps: true });
 
 module.exports = mongoose.model('Bucket', BucketSchema);

@@ -139,4 +139,31 @@ router.get('/ledger', async (req, res) => {
     }
 });
 
+// Create New Admin
+router.post('/create-admin', async (req, res) => {
+    try {
+        const { name, email, password } = req.body;
+
+        let user = await User.findOne({ email });
+        if (user) return res.status(400).json({ msg: 'User already exists' });
+
+        user = new User({
+            name,
+            email,
+            password,
+            isAdmin: true
+        });
+
+        // Hash password
+        const bcrypt = require('bcryptjs');
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(password, salt);
+
+        await user.save();
+        res.json({ msg: 'Admin created successfully', user: { id: user.id, name: user.name, email: user.email } });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

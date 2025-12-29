@@ -36,7 +36,7 @@ const Login = () => {
                         <Shield className="w-8 h-8 text-white" />
                     </div>
                     <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Super Admin Terminal</h1>
-                    <p className="text-slate-400 text-sm mt-2 font-medium">Internal Governance & Oversight Protocol</p>
+                    <p className="text-slate-400 text-sm mt-2 font-medium">Internal XPOLL & Oversight Protocol</p>
                 </div>
 
                 <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-xl shadow-slate-200/50">

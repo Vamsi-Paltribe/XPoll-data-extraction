@@ -1,20 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const multer = require('multer');
-const { parse } = require('csv-parse/sync');
+const mongoose = require('mongoose');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const Bucket = require('../models/Bucket');
 const CustomerRecord = require('../models/CustomerRecord');
 
-// Memory storage for file uploads
-const upload = multer({ storage: multer.memoryStorage() });
-
 // Middleware to check for admin status
 const adminOnly = async (req, res, next) => {
     try {
         const user = await User.findById(req.user.id);
-        if (!user || (!user.isAdmin && user.email !== 'super@gmail.com')) {
+        if (!user || !user.isAdmin) {
             return res.status(403).json({ msg: 'Access denied. Admin privileges required.' });
         }
         next();
@@ -26,118 +22,99 @@ const adminOnly = async (req, res, next) => {
 router.use(auth);
 router.use(adminOnly);
 
-// Upload CSV Data to Bucket
-router.post('/buckets/:id/upload', upload.single('file'), async (req, res) => {
+/**
+ * @route   GET /api/admin/data/master
+ * @desc    Get all Master Data (Global Buckets) with pagination
+ */
+router.get('/data/master', async (req, res) => {
     try {
-        const bucketId = req.params.id;
-        const bucket = await Bucket.findById(bucketId);
-        if (!bucket) return res.status(404).json({ msg: 'Bucket not found' });
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 20;
+        const skip = (page - 1) * limit;
 
-        if (!req.file) {
-            return res.status(400).json({ msg: 'No file uploaded' });
+        // 1. Find all Global Buckets
+        const globalBuckets = await Bucket.find({ type: 'global' }).select('_id name description');
+        const globalBucketIds = globalBuckets.map(b => b._id);
+
+        if (globalBucketIds.length === 0) {
+            return res.json({
+                data: [],
+                pagination: { total: 0, page, pages: 0 },
+                buckets: []
+            });
         }
 
-        // Parse CSV
-        const fileContent = req.file.buffer.toString('utf-8');
-        const records = parse(fileContent, {
-            columns: true,
-            skip_empty_lines: true,
-            trim: true
-        });
+        // 2. Count Total Records
+        const total = await CustomerRecord.countDocuments({ bucketId: { $in: globalBucketIds } });
 
-        console.log(`[Upload] Parsed ${records.length} records for bucket ${bucket.name}`);
-
-        let upsertCount = 0;
-        let errorCount = 0;
-
-        // Process Records
-        for (const record of records) {
-            try {
-                // Generate KeyHash (State|City|Name) as fallback uniqueness
-                // Similar to stagingService.js logic
-                const state = (record.State || record.STATE || record.state || '').toLowerCase().trim();
-                const city = (record.City || record.CITY || record.city || '').toLowerCase().trim();
-                const name = (record.Name || record.NAME || record.name || '').toLowerCase().trim();
-
-                // If critical fields missing, skip or use a UUID? 
-                // We'll require at least a name or use a random hash if really empty
-                const keyHash = (state && city && name)
-                    ? `${state}|${city}|${name}`
-                    : `MANUAL_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-                await CustomerRecord.findOneAndUpdate(
-                    { bucketId, keyHash },
-                    {
-                        $set: {
-                            data: record,
-                            bucketId,
-                            keyHash
-                        },
-                        $push: {
-                            history: {
-                                action: 'admin_upload',
-                                timestamp: new Date(),
-                                user: req.user.id
-                            }
-                        }
-                    },
-                    { upsert: true, new: true }
-                );
-                upsertCount++;
-            } catch (err) {
-                console.error(`Error processing record:`, err);
-                errorCount++;
-            }
-        }
-
-        // Update bucket timestamp
-        bucket.lastSyncedAt = new Date();
-        await bucket.save();
+        // 3. Fetch Records
+        const records = await CustomerRecord.find({ bucketId: { $in: globalBucketIds } })
+            .sort({ updatedAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .populate('bucketId', 'name');
 
         res.json({
-            msg: 'Upload processed',
-            totalReceived: records.length,
-            upserted: upsertCount,
-            errors: errorCount
+            data: records,
+            pagination: {
+                total,
+                page,
+                pages: Math.ceil(total / limit)
+            },
+            buckets: globalBuckets
         });
 
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: 'Server Error' });
     }
 });
 
-// Update Single Record
-router.put('/records/:id', async (req, res) => {
+/**
+ * @route   POST /api/admin/data/master/seed
+ * @desc    Seed dummy data into a Global Bucket
+ */
+router.post('/data/master/seed', async (req, res) => {
     try {
-        const { data } = req.body;
-        const record = await CustomerRecord.findById(req.params.id);
-        if (!record) return res.status(404).json({ msg: 'Record not found' });
+        const { stateName = 'California', count = 10 } = req.body;
 
-        // Update data
-        record.data = { ...record.data, ...data };
+        // 1. Find or Create Global Bucket for State
+        let bucket = await Bucket.findOne({ name: stateName, type: 'global' });
 
-        // Log history
-        record.history.push({
-            action: 'admin_edit',
-            timestamp: new Date(),
-            user: req.user.id
-        });
+        if (!bucket) {
+            bucket = new Bucket({
+                name: stateName,
+                description: `Master Records for ${stateName}`,
+                type: 'global',
+                createdBy: req.user.id
+            });
+            await bucket.save();
+        }
 
-        await record.save();
-        res.json(record);
+        // 2. Generate Dummy Data
+        const dummyRecords = [];
+        for (let i = 0; i < count; i++) {
+            dummyRecords.push({
+                bucketId: bucket._id,
+                data: {
+                    Name: `User ${Math.floor(Math.random() * 10000)}`,
+                    City: ['Los Angeles', 'San Francisco', 'San Diego'][Math.floor(Math.random() * 3)],
+                    State: stateName,
+                    Phone: `555-${Math.floor(1000 + Math.random() * 9000)}`,
+                    Status: 'Active'
+                },
+                keyHash: Math.random().toString(36).substring(7)
+            });
+        }
+
+        // 3. Insert Records
+        await CustomerRecord.insertMany(dummyRecords);
+
+        res.json({ msg: `Successfully seeded ${count} records for ${stateName}` });
+
     } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Delete Record
-router.delete('/records/:id', async (req, res) => {
-    try {
-        await CustomerRecord.findByIdAndDelete(req.params.id);
-        res.json({ msg: 'Record deleted' });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+        console.error(err);
+        res.status(500).json({ error: 'Seeding Failed' });
     }
 });
 

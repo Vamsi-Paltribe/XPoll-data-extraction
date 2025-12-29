@@ -3,11 +3,20 @@ const router = express.Router();
 const Bucket = require('../models/Bucket');
 const StagingRecord = require('../models/StagingRecord');
 const CustomerRecord = require('../models/CustomerRecord');
-const { fetchAndParseSheet, syncToStaging, fetchHeaders } = require('../services/stagingService');
+const SyncBatch = require('../models/SyncBatch');
+const { fetchGlobalRecords, syncToStaging, fetchHeaders } = require('../services/stagingService');
 const { default: mongoose } = require('mongoose');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const TokenLedger = require('../models/TokenLedger');
+const multer = require('multer');
+const { processDocumentWithOpenAI } = require('../services/openaiProcessor');
+
+// Multer Setup
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 // Apply auth to all bucket routes
 router.use(auth);
@@ -16,6 +25,11 @@ router.use(auth);
 router.get('/', async (req, res) => {
     try {
         const buckets = await Bucket.aggregate([
+            {
+                $match: {
+                    createdBy: new mongoose.Types.ObjectId(req.user.id)
+                }
+            },
             {
                 $lookup: {
                     from: 'customerrecords',
@@ -38,6 +52,55 @@ router.get('/', async (req, res) => {
         res.json(buckets);
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Global Master Data Directory (States, Counts, Cities)
+router.get('/global/directory', async (req, res) => {
+    try {
+        // 1. Fetch Global Buckets with Record Counts
+        const buckets = await Bucket.aggregate([
+            { $match: { type: 'global' } },
+            {
+                $lookup: {
+                    from: 'customerrecords',
+                    localField: '_id',
+                    foreignField: 'bucketId',
+                    as: 'records'
+                }
+            },
+            {
+                $project: {
+                    name: 1,
+                    availableCities: 1,
+                    recordCount: { $size: '$records' } // Accurate count from DB
+                }
+            }
+        ]);
+
+        // 2. Transform into frontend-friendly format
+        const states = buckets.map(b => ({
+            code: b.name.substring(0, 2).toUpperCase(), // Naive code generation, ideally store code
+            name: b.name,
+            count: b.recordCount
+        })).sort((a, b) => b.count - a.count);
+
+        // 3. Aggregate Unique Cities across all global buckets
+        const allCities = new Set();
+        buckets.forEach(b => {
+            if (b.availableCities && Array.isArray(b.availableCities)) {
+                b.availableCities.forEach(c => allCities.add(c));
+            }
+        });
+
+        res.json({
+            states,
+            cities: Array.from(allCities).sort()
+        });
+
+    } catch (err) {
+        console.error('Error fetching global directory:', err);
+        res.status(500).json({ error: 'Failed to load master directory' });
     }
 });
 
@@ -101,7 +164,7 @@ router.post('/:id/headers', async (req, res) => {
         const bucket = await Bucket.findById(req.params.id);
         if (!bucket) return res.status(404).json({ msg: 'Bucket not found' });
 
-        const headers = await fetchHeaders(bucket.sourceUrl, filters);
+        const headers = await fetchHeaders(filters);
         res.json(headers);
     } catch (err) {
         console.error(err);
@@ -119,7 +182,7 @@ router.post('/:id/sync', async (req, res) => {
         const user = await User.findById(req.user.id);
         if (!user) return res.status(404).json({ msg: 'User not found' });
 
-        const cloudRecords = await fetchAndParseSheet(bucket.sourceUrl, filters);
+        const cloudRecords = await fetchGlobalRecords(filters);
 
         // --- NEW TOKEN STRATEGY: 1 Token per 100 records (minimum 1) ---
         const recordCount = cloudRecords.length;
@@ -129,7 +192,7 @@ router.post('/:id/sync', async (req, res) => {
             return res.status(403).json({ error: `Insufficient tokens. Syncing ${recordCount} records costs ${totalCost} coins. Your balance: ${user.tokens}` });
         }
 
-        const result = await syncToStaging(bucket._id, cloudRecords, filters);
+        const result = await syncToStaging(bucket._id, filters);
 
         bucket.lastSyncedAt = new Date();
         bucket.lastSyncParams = filters;
@@ -289,6 +352,90 @@ router.get('/:id/stats/states', async (req, res) => {
         });
 
         res.json(result);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Upload Data to Bucket (User Side - Staging Flow)
+router.post('/:id/upload', upload.single('file'), async (req, res) => {
+    try {
+        const bucket = await Bucket.findOne({ _id: req.params.id, createdBy: req.user.id });
+        if (!bucket) return res.status(404).json({ error: 'Bucket not found or access denied' });
+
+        if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+        const fileType = req.file.mimetype === 'application/pdf' ? 'pdf' :
+            req.file.mimetype.includes('excel') || req.file.mimetype.includes('spreadsheet') ? 'toon' : // Treat excel as TOON/Table
+                req.file.mimetype.includes('csv') ? 'toon' :
+                    req.file.mimetype.includes('image') ? 'image' : 'text';
+
+        // 1. Process with LLM/Processor
+        const result = await processDocumentWithOpenAI({
+            data: req.file.buffer,
+            type: fileType,
+            fileName: req.file.originalname
+        });
+
+        if (!result.success && !result.data) {
+            throw new Error(result.message || 'Processing failed');
+        }
+
+        const extractedData = result.data; // Grouped by State
+
+        // 2. Create a new SyncBatch
+        const batch = new SyncBatch({
+            bucketId: bucket._id,
+            status: 'pending',
+            recordCount: 0,
+            filters: {
+                states: Object.keys(extractedData),
+                cities: [] // Could populate if we extract cities
+            }
+        });
+        await batch.save();
+
+        let totalStaged = 0;
+        const states = Object.keys(extractedData);
+
+        for (const state of states) {
+            const records = extractedData[state];
+            totalStaged += records.length;
+
+            const stagingRecords = records.map(record => ({
+                bucketId: bucket._id,
+                batchId: batch._id,
+                data: record,
+                keyHash: record.keyHash || record.Name ? `${record.Name}_${record.City || ''}` : Math.random().toString(36).substring(7),
+                status: 'ready' // Default to ready for now, could check conflicts later
+            }));
+
+            // Bulk Insert to Staging
+            await StagingRecord.insertMany(stagingRecords);
+
+            // Update Headers in Bucket Metadata (Preview needs headers too)
+            const existingHeaders = new Set(bucket.availableHeaders || []);
+
+            records.forEach(rec => {
+                Object.keys(rec).forEach(k => existingHeaders.add(k));
+            });
+
+            bucket.availableHeaders = Array.from(existingHeaders);
+        }
+
+        batch.recordCount = totalStaged;
+        await batch.save();
+
+        await bucket.save();
+
+        res.json({
+            success: true,
+            batchId: batch._id,
+            totalReceived: totalStaged,
+            message: 'Data uploaded to staging. Please review and commit.'
+        });
+
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.message });
