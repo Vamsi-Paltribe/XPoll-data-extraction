@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { FileSpreadsheet, ExternalLink, Info, Upload, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { ExternalLink, Upload, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import api from '../services/api';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
+import { parseImageToJSON } from '../utils/dataParser';
 
 // 1. Import the worker correctly using Vite's ?url syntax
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
@@ -32,16 +33,31 @@ const ManageData = () => {
 
             if (['xlsx', 'xls', 'csv'].includes(fileType)) {
                 // Parse Excel/CSV to JSON Array
-                const data = await file.arrayBuffer();
-                const workbook = XLSX.read(data);
-                const sheetName = workbook.SheetNames[0];
-                const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-                parsedData = { type: 'structured', content: json };
+                try {
+                    console.log('[CSV/Excel] 📊 Starting parsing...');
+                    const data = await file.arrayBuffer();
+                    console.log('[CSV/Excel] 📦 File size:', data.byteLength, 'bytes');
+
+                    const workbook = XLSX.read(data);
+                    console.log('[CSV/Excel] 📋 Sheets found:', workbook.SheetNames);
+
+                    const sheetName = workbook.SheetNames[0];
+                    const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+                    console.log('[CSV/Excel] ✅ Parsed', json.length, 'rows');
+
+                    parsedData = { type: 'structured', content: json };
+                } catch (csvError) {
+                    console.error('[CSV/Excel] ❌ Parsing error:', csvError);
+                    throw new Error(`CSV/Excel parsing failed: ${csvError.message}`);
+                }
             }
             else if (fileType === 'pdf') {
+                console.log('[PDF] 📄 Starting PDF extraction...');
                 const arrayBuffer = await file.arrayBuffer();
+                console.log(`[PDF] 📦 File size: ${arrayBuffer.byteLength} bytes`);
                 const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
                 const pdf = await loadingTask.promise;
+                console.log(`[PDF] 📖 Total pages: ${pdf.numPages}`);
 
                 let pagesData = [];
                 let fullTextConcatenated = "";
@@ -51,15 +67,64 @@ const ManageData = () => {
                     const textContent = await page.getTextContent();
                     const pageText = textContent.items.map(item => item.str).join(' ');
 
+                    console.log(`[PDF] 📄 Page ${i}: Extracted ${pageText.length} characters`);
+                    console.log(`[PDF] 📝 Page ${i} preview:`, pageText.substring(0, 200) + '...');
+
                     pagesData.push({ page: i, content: pageText });
                     fullTextConcatenated += pageText + "\n";
                 }
+
+                console.log(`[PDF] ✅ Total text extracted: ${fullTextConcatenated.length} characters`);
+                console.log(`[PDF] 📊 Full text preview (first 500 chars):`);
+                console.log(fullTextConcatenated.substring(0, 500));
 
                 parsedData = {
                     type: 'pdf_text',
                     content: fullTextConcatenated,
                     metadata: { totalPages: pdf.numPages, structure: pagesData }
                 };
+
+                console.log('[PDF] 📦 Parsed data structure:', {
+                    type: parsedData.type,
+                    contentLength: parsedData.content.length,
+                    totalPages: parsedData.metadata.totalPages,
+                    pagesCount: parsedData.metadata.structure.length
+                });
+            }
+            // --- IMAGE OCR LOGIC ---
+            else if (['png', 'jpg', 'jpeg', 'bmp', 'gif'].includes(fileType)) {
+                console.log('[Image] 🖼️ Starting OCR extraction...');
+
+                const result = await parseImageToJSON(file, (progress) => {
+                    if (progress.status === 'recognizing text') {
+                        console.log(`[Image] ⚡ OCR Progress: ${Math.round(progress.progress * 100)}%`);
+                    }
+                });
+
+                if (result.success) {
+                    console.log(`[Image] ✅ OCR complete: ${result.text.length} characters`);
+                    console.log(`[Image] 🎯 Confidence: ${result.confidence.toFixed(2)}%`);
+                    console.log(`[Image] 📊 Words: ${result.words}, Lines: ${result.lines}`);
+                    console.log(`[Image] 📝 Text preview:`, result.text.substring(0, 300));
+
+                    parsedData = {
+                        type: 'image_ocr',
+                        content: result.text,
+                        metadata: {
+                            confidence: result.confidence,
+                            words: result.words,
+                            lines: result.lines
+                        }
+                    };
+
+                    console.log('[Image] 📦 Parsed data structure:', {
+                        type: parsedData.type,
+                        contentLength: parsedData.content.length,
+                        confidence: parsedData.metadata.confidence
+                    });
+                } else {
+                    throw new Error(`OCR failed: ${result.error}`);
+                }
             }
             // --- NEW TXT FILE LOGIC ---
             else if (fileType === 'txt') {
@@ -72,12 +137,28 @@ const ManageData = () => {
 
             // --- SEND TO API ---
             if (parsedData) {
-                console.log('parsedData', parsedData);
+                console.log('[Upload] 🚀 Sending to backend API...');
+                console.log('[Upload] 📦 Payload structure:', {
+                    fileName: file.name,
+                    fileDataType: parsedData.type,
+                    contentLength: Array.isArray(parsedData.content) ? parsedData.content.length : parsedData.content?.length || 'N/A',
+                    hasMetadata: !!parsedData.metadata
+                });
+
+                // Handle preview for both string and array content
+                const contentPreview = Array.isArray(parsedData.content)
+                    ? `Array with ${parsedData.content.length} items. First item: ${JSON.stringify(parsedData.content[0])?.substring(0, 200)}`
+                    : parsedData.content?.substring(0, 300) || 'No content';
+
+                console.log('[Upload] 📝 Content preview:', contentPreview);
+
                 const res = await api.post('/admin/upload-document/preview', {
                     fileName: file.name,
                     fileData: parsedData
                 });
 
+                console.log('[Upload] ✅ Response received from backend');
+                console.log('[Upload] 📊 Response data:', res.data);
                 setPreviewData(res.data);
                 console.log("Extracted Data for Preview:", res.data);
             } else {

@@ -23,7 +23,8 @@ const corsOptions = {
   allowedHeaders: ['Content-Type', 'x-auth-token', 'Authorization']
 };
 app.use(cors(corsOptions));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Increased limit for large file uploads
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(passport.initialize());
 
 // DB Connection
