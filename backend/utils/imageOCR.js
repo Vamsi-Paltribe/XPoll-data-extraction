@@ -1,28 +1,42 @@
 const Tesseract = require('tesseract.js');
+const sharp = require('sharp');
 
 /**
- * Extract text from image using OCR (no LLM!)
+ * Extract text from image using OCR (Optimized Preprocessing, Low RAM)
  * @param {Buffer} imageBuffer - Image buffer
  * @returns {Promise<string>} - Extracted text
  */
 async function extractTextFromImage(imageBuffer) {
+    let worker = null;
     try {
-        console.log('[OCR] Starting Tesseract OCR...');
+        const start = Date.now();
+        console.log('[OCR] 🖼️  Preprocessing image (Resize + Grayscale)...');
 
-        const { data: { text } } = await Tesseract.recognize(
-            imageBuffer,
-            'eng',
-            {
-                logger: m => console.log(`[OCR] ${m.status}: ${Math.round(m.progress * 100)}%`)
-            }
-        );
+        // Preprocess with sharp for better OCR accuracy
+        const processedBuffer = await sharp(imageBuffer)
+            .resize({ width: 2500, withoutEnlargement: true }) // Ensure good resolution for text
+            .grayscale() // Remove color noise
+            .normalize() // Improve contrast
+            .toBuffer();
 
-        console.log(`[OCR] ✅ Extracted ${text.length} characters`);
+        console.log('[OCR] 🚀 Starting Tesseract Worker...');
+        worker = await Tesseract.createWorker('eng');
+
+        console.log('[OCR] 📖 Recognizing text...');
+        const { data: { text } } = await worker.recognize(processedBuffer);
+
+        const duration = ((Date.now() - start) / 1000).toFixed(2);
+        console.log(`[OCR] ✅ Extracted ${text.length} chars in ${duration}s`);
         return text;
 
     } catch (error) {
         console.error('[OCR] Failed:', error.message);
         throw error;
+    } finally {
+        if (worker) {
+            console.log('[OCR] 🧹 Terminating worker to free RAM...');
+            await worker.terminate();
+        }
     }
 }
 

@@ -7,6 +7,7 @@ const { processDocumentWithOpenAI } = require('../services/openaiProcessor');
 // const { processPdfWithGemini } = require('../services/geminiProcessor');
 // const { updateGoogleSheets } = require('../services/googleSheetsService');
 const { extractMappingLogic, applyLogicToDataset } = require('../services/logicExtractor');
+const ParsingTemplate = require('../models/ParsingTemplate');
 
 const router = express.Router();
 
@@ -95,6 +96,9 @@ router.post('/extract-logic', auth, adminOnly, async (req, res) => {
             logic: result.logic,
             confidence: result.confidence,
             needsLLM: result.needsLLM,
+            source: result.source, // 'gpt' or 'template'
+            signature: result.signature, // New: unique file signature
+            templateName: result.templateName, // If found
             tier: result.tier,
             tokenUsage: result.tokenUsage,
             performance: result.performance,
@@ -344,7 +348,8 @@ router.post('/upload-document/commit', auth, adminOnly, async (req, res) => {
     try {
         console.log('[Upload Commit] Received commit request');
 
-        const { extractedData } = req.body;
+        const { extractedData, saveAsTemplate, templateName, logic, signature } = req.body;
+        // console.log('[Debugging] Commit Body:', JSON.stringify(req.body, null, 2));
 
         if (!extractedData || typeof extractedData !== 'object') {
             return res.status(400).json({ error: 'Invalid data format' });
@@ -442,6 +447,30 @@ router.post('/upload-document/commit', auth, adminOnly, async (req, res) => {
         });
 
         console.log('[Upload Commit] Commit completed successfully');
+
+        // NEW: Save as Template if requested
+        if (saveAsTemplate && templateName && logic && signature) {
+            try {
+                console.log(`[Template System] Saving new template: "${templateName}"`);
+
+                // Upsert to avoid race conditions
+                await ParsingTemplate.findOneAndUpdate(
+                    { signature },
+                    {
+                        name: templateName,
+                        logic: logic,
+                        signature: signature,
+                        createdBy: req.user.id,
+                        $inc: { usageCount: 1 }
+                    },
+                    { upsert: true, new: true }
+                );
+                console.log(`[Template System] ✅ Template saved successfully!`);
+            } catch (templateErr) {
+                console.error(`[Template System] ⚠️ Failed to save template: ${templateErr.message}`);
+                // Don't fail the main request, just log error
+            }
+        }
 
     } catch (error) {
         console.error('[Upload Commit] Error:', error.message);

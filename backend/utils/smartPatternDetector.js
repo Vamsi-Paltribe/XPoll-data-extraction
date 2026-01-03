@@ -115,12 +115,26 @@ function detectFieldTypes(values) {
 function analyzePlainText(text) {
     const lines = text.split('\n').filter(l => l.trim());
 
+    // Detect "One Long Line" / Flattened PDF artifact
+    // Heuristic: Few lines relative to size OR extremely long lines (indicating pages not split into rows)
+    const avgLineLength = lines.length > 0 ? text.length / lines.length : 0;
+
+    if (text.length > 1000 && (lines.length < 5 || avgLineLength > 300)) {
+        return {
+            needsLLM: true, // Prevents false positive "local processing" attempts
+            needsRestructuring: true,
+            reason: `Text appears flattened (Avg line length: ${Math.round(avgLineLength)})`,
+            sample: text.substring(0, 2000), // Send first 2k chars to LLM to find pattern
+            totalLength: text.length
+        };
+    }
+
     if (lines.length < 2) {
         return { needsLLM: true, reason: 'Insufficient data' };
     }
 
-    // Take first 5 lines as sample
-    const sample = lines.slice(0, Math.min(5, lines.length));
+    // Take first 50 lines as sample
+    const sample = lines.slice(0, Math.min(50, lines.length));
 
     // Detect structure
     const structure = detectStructure(sample);
@@ -128,8 +142,11 @@ function analyzePlainText(text) {
     if (!structure) {
         return {
             needsLLM: true,
-            reason: 'No consistent structure detected',
-            sample: sample.join('\n')
+            reason: 'No consistent structure detected locally',
+            useSmartLLM: true, // Try LLM for pattern detection first
+            sample: sample.join('\n'),
+            sampleLines: sample.length,
+            totalLines: lines.length
         };
     }
 

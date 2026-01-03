@@ -169,33 +169,23 @@ ${result.content.substring(0, 50000)}`;
                 tracker.logReport();
                 return { data: toonResult.data, performance };
             } else {
-                tracker.startStep('LLM Full Extraction (No Table)');
-                const prompt = `Extract electoral data from this OCR text.
+                console.log(`[IMAGE] No explicit table found via heuristics. Attempting Smart Pattern Detection...`);
+                tracker.startStep('Smart Pattern Fallback');
 
-FIELDS: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
-
-Return JSON: {"StateName": [{...}]}
-
-TEXT:
-${result.content}`;
-
-                const estimatedTokens = tracker.estimateTokens(prompt);
-
-                const completion = await openai.chat.completions.create({
-                    model: "gpt-4o-mini",
-                    messages: [
-                        { role: "system", content: "Return valid JSON only." },
-                        { role: "user", content: prompt }
-                    ],
-                    response_format: { type: "json_object" },
-                    temperature: 0.1
+                // Recurse as 'text' to use the specific Smart Pattern logic (including flattening repair)
+                const textResult = await processDocumentWithOpenAI({
+                    data: result.content,
+                    type: 'text',
+                    fileName
                 });
 
-                tracker.recordTokens(completion.usage);
-                tracker.endStep({ estimatedTokens, actualTokens: completion.usage?.total_tokens });
+                tracker.endStep();
+                const performance = tracker.getReport();
+                performance.steps.push(...textResult.performance.steps);
+                performance.tokenUsage = textResult.performance.tokenUsage;
 
-                const performance = tracker.logReport();
-                return { data: JSON.parse(completion.choices[0].message.content), performance };
+                tracker.logReport();
+                return { data: textResult.data, performance };
             }
         }
 
@@ -618,24 +608,33 @@ Return JSON grouped by state: {"StateName": [{...}], ...}`;
             }
         }
 
-        // CASE 5: Plain TEXT (TXT files - use smart pattern detection!)
-        else if (type === 'text') {
+        // CASE 5: Plain TEXT or PDF TEXT (TXT/PDF files - use smart pattern detection!)
+        else if (type === 'text' || type === 'pdf_text') {
             const { analyzePlainText } = require('../utils/smartPatternDetector');
 
-            tracker.startStep('Smart Pattern Analysis');
-            const analysis = analyzePlainText(data);
+            let processedText = data; // content from payload
+
+            tracker.startStep('Smart Pattern Analysis (Initial)');
+            let analysis = analyzePlainText(processedText);
+
+            // Dynamic Row Reconstruction (for flattened PDFs)
+            if (analysis.needsRestructuring) {
+                processedText = await reconstructFlattenedText(processedText, analysis, tracker, openai);
+                analysis = analyzePlainText(processedText); // Re-analyze
+            }
+
             tracker.endStep({
                 needsLLM: analysis.needsLLM,
                 confidence: analysis.structure?.mapping?.confidence,
                 totalLines: analysis.totalLines
             });
 
-            if (!analysis.needsLLM) {
+            if (!analysis.needsLLM && analysis.structure) {
                 // Pattern detected with high confidence - NO LLM NEEDED!
                 console.log(`[SMART] ✅ Pattern detected! Processing ${analysis.totalLines} lines locally...`);
 
                 tracker.startStep('Parse with Detected Pattern');
-                const lines = data.split('\n').filter(l => l.trim());
+                const lines = processedText.split('\n').filter(l => l.trim());
                 const delimiter = analysis.structure.delimiter;
                 const headers = analysis.structure.headers;
 
@@ -682,76 +681,8 @@ Return JSON grouped by state: {"StateName": [{...}], ...}`;
                 return { data: grouped, performance };
             }
             else if (analysis.useSmartLLM) {
-                // Use LLM on first 5 lines only, then apply pattern
-                console.log(`[SMART] Using LLM on first ${analysis.sampleLines} lines only...`);
-
-                tracker.startStep('LLM Pattern Detection (5 lines only)');
-                const prompt = `Analyze this sample and return the column mapping.
-
-TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
-
-SAMPLE (${analysis.sampleLines} of ${analysis.totalLines} lines):
-${analysis.sample}
-
-Return JSON with:
-1. "delimiter": the delimiter used (comma, tab, pipe, or "space")
-2. "headers": array of column names
-3. "mapping": object mapping target fields to source column indices
-
-Example: {"delimiter": ",", "headers": ["Name", "City", "State"], "mapping": {"Name": 0, "City": 1, "State": 2}}`;
-
-                const estimatedTokens = tracker.estimateTokens(prompt);
-
-                const completion = await openai.chat.completions.create({
-                    model: "gpt-4o-mini",
-                    messages: [
-                        { role: "system", content: "Return only valid JSON." },
-                        { role: "user", content: prompt }
-                    ],
-                    response_format: { type: "json_object" },
-                    temperature: 0
-                });
-
-                tracker.recordTokens(completion.usage);
-                const patternResult = JSON.parse(completion.choices[0].message.content);
-                tracker.endStep({
-                    estimatedTokens,
-                    actualTokens: completion.usage?.total_tokens,
-                    sampleLines: analysis.sampleLines
-                });
-
-                // Apply detected pattern to ALL lines
-                tracker.startStep('Apply Pattern to All Lines');
-                const lines = data.split('\n').filter(l => l.trim());
-                const delimiter = patternResult.delimiter === 'space' ? /\s{2,}/ :
-                    patternResult.delimiter === 'tab' ? '\t' : patternResult.delimiter;
-
-                const records = [];
-                for (let i = 1; i < lines.length; i++) { // Skip header
-                    const parts = lines[i].split(delimiter).map(p => p.trim());
-                    const record = {};
-
-                    Object.entries(patternResult.mapping).forEach(([targetField, sourceIndex]) => {
-                        record[targetField] = parts[sourceIndex] || null;
-                    });
-
-                    records.push(record);
-                }
-                tracker.endStep({ recordCount: records.length });
-
-                // Group by state
-                tracker.startStep('Group by State');
-                const grouped = {};
-                records.forEach(record => {
-                    const state = record.State || 'Unknown';
-                    if (!grouped[state]) grouped[state] = [];
-                    grouped[state].push(record);
-                });
-                tracker.endStep({ stateCount: Object.keys(grouped).length });
-
-                console.log(`[SMART] ✅ Processed ${records.length} records with minimal LLM usage!`);
-                const performance = tracker.logReport();
-                return { data: grouped, performance };
+                // Use Helper Function for Smart Schema Extraction (Unified with Image Logic)
+                return await extractDataWithSmartSchema(processedText, analysis, tracker, openai);
             }
             else {
                 // Truly unstructured - use full LLM extraction
@@ -786,99 +717,25 @@ ${data.substring(0, 50000)}`;
             }
         }
 
-        // CASE 6: PDF_TEXT (raw text from PDF sent by frontend)
-        else if (type === 'pdf_text') {
-            console.log(`[PDF_TEXT] 📄 Processing raw PDF text`);
-            console.log(`[PDF_TEXT] 📊 Total characters: ${data.length}`);
-            console.log(`[PDF_TEXT] 📝 Text preview (first 300 chars):`);
-            console.log(data.substring(0, 300));
-
-            tracker.startStep('LLM Extraction from PDF Text');
-
-            const textToProcess = data.substring(0, 50000);
-            console.log(`[PDF_TEXT] ⚡ Sending ${textToProcess.length} characters to LLM (max 50,000)`);
-
-            const prompt = `Extract electoral/campaign finance data from this PDF text.
-
-FIELDS: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
-
-Return JSON grouped by state: {"StateName": [{...}], ...}
-
-PDF TEXT (first 50,000 chars):
-${textToProcess}`;
-
-            const estimatedTokens = tracker.estimateTokens(prompt);
-            console.log(`[PDF_TEXT] 💰 Estimated tokens: ${estimatedTokens}`);
-
-            const completion = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [
-                    { role: "system", content: "Extract structured data from PDF text. Return valid JSON grouped by state." },
-                    { role: "user", content: prompt }
-                ],
-                response_format: { type: "json_object" },
-                temperature: 0.1
-            });
-
-            tracker.recordTokens(completion.usage);
-            console.log(`[PDF_TEXT] ✅ LLM processing complete`);
-            console.log(`[PDF_TEXT] 💰 Actual tokens used: ${completion.usage.total_tokens}`);
-            console.log(`[PDF_TEXT] 📊 Response preview:`, completion.choices[0].message.content.substring(0, 300));
-
-            tracker.endStep({ estimatedTokens, actualTokens: completion.usage?.total_tokens });
-
-            const extractedData = JSON.parse(completion.choices[0].message.content);
-            console.log(`[PDF_TEXT] 📦 Extracted data structure:`, Object.keys(extractedData));
-            console.log(`[PDF_TEXT] 📊 States found:`, Object.keys(extractedData).length);
-
-            const performance = tracker.logReport();
-            return { data: extractedData, performance };
-        }
-
         // CASE 7: IMAGE_OCR (text extracted from image via Tesseract)
         else if (type === 'image_ocr') {
-            console.log(`[IMAGE_OCR] 🖼️ Processing OCR text from image`);
-            console.log(`[IMAGE_OCR] 📊 Total characters: ${data.length}`);
-            console.log(`[IMAGE_OCR] 📝 Text preview (first 300 chars):`);
-            console.log(data.substring(0, 300));
+            console.log(`[IMAGE_OCR] 🖼️  Processing OCR text via Smart Pattern Pipeline...`);
 
-            tracker.startStep('LLM Extraction from OCR Text');
-
-            const prompt = `Extract electoral/campaign finance data from this OCR text extracted from an image.
-
-FIELDS: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
-
-Return JSON grouped by state: {"StateName": [{...}], ...}
-
-OCR TEXT:
-${data}`;
-
-            const estimatedTokens = tracker.estimateTokens(prompt);
-            console.log(`[IMAGE_OCR] 💰 Estimated tokens: ${estimatedTokens}`);
-
-            const completion = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
-                messages: [
-                    { role: "system", content: "Extract structured data from OCR text. Handle OCR errors and return valid JSON grouped by state." },
-                    { role: "user", content: prompt }
-                ],
-                response_format: { type: "json_object" },
-                temperature: 0.1
+            // Recurse as 'text' to use the specific Smart Pattern logic (including flattening repair)
+            // This reuses the PDF optimization for images!
+            const textResult = await processDocumentWithOpenAI({
+                data: data,
+                type: 'text',
+                fileName
             });
 
-            tracker.recordTokens(completion.usage);
-            console.log(`[IMAGE_OCR] ✅ LLM processing complete`);
-            console.log(`[IMAGE_OCR] 💰 Actual tokens used: ${completion.usage.total_tokens}`);
-            console.log(`[IMAGE_OCR] 📊 Response preview:`, completion.choices[0].message.content.substring(0, 300));
+            // Merge performance report
+            const performance = tracker.getReport();
+            performance.steps.push(...textResult.performance.steps);
+            performance.tokenUsage = textResult.performance.tokenUsage;
 
-            tracker.endStep({ estimatedTokens, actualTokens: completion.usage?.total_tokens });
-
-            const extractedData = JSON.parse(completion.choices[0].message.content);
-            console.log(`[IMAGE_OCR] 📦 Extracted data structure:`, Object.keys(extractedData));
-            console.log(`[IMAGE_OCR] 📊 States found:`, Object.keys(extractedData).length);
-
-            const performance = tracker.logReport();
-            return { data: extractedData, performance };
+            tracker.logReport();
+            return { data: textResult.data, performance };
         }
 
         // CASE 8: STRUCTURED (already parsed data from CSV/Excel/OCR - no LLM needed!)
@@ -921,6 +778,138 @@ ${data}`;
         performance.error = error.message;
         throw error;
     }
+}
+
+/**
+ * Helper: Reconstructs flattened text rows using LLM-generated Regex
+ */
+async function reconstructFlattenedText(text, analysis, tracker, openai) {
+    console.log('[SMART] ⚠️ Text flattened. Asking LLM for separator regex...');
+    tracker.startStep('Dynamic Row Reconstruction');
+
+    const restructurePrompt = `
+You are a Regex Expert.
+The following text is missing newlines between rows. It is a "flattened" text dump.
+Identify the JavaScript Regex pattern that splits this text into logical rows.
+Example: If rows end with "Terminated 12345", regex might be "/(?<=Terminated\\s+)(?=\\d{5,})/".
+
+SAMPLE TEXT:
+${analysis.sample}
+
+RETURN ONLY the JavaScript Regex string (e.g. "(?<=Active)(\\s+)" or "/.../"). Do not include explanation.
+    `;
+
+    try {
+        const completion = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [{ role: 'user', content: restructurePrompt }],
+            temperature: 0
+        });
+
+        let regexStr = completion.choices[0].message.content.trim();
+        regexStr = regexStr.replace(/^```(?:javascript|regex)?\n?/, '').replace(/\n?```$/, '');
+
+        let flags = '';
+        const lastSlashIndex = regexStr.lastIndexOf('/');
+        if (regexStr.startsWith('/') && lastSlashIndex > 0) {
+            flags = regexStr.substring(lastSlashIndex + 1);
+            regexStr = regexStr.substring(1, lastSlashIndex);
+        }
+
+        if (!flags.includes('g')) flags += 'g';
+        console.log(`[SMART] 🧩 Identified Separator Regex: /${regexStr}/${flags}`);
+
+        const separatorRegex = new RegExp(regexStr, flags);
+        const processedText = text.replace(separatorRegex, '$&\n');
+
+        const newLines = processedText.split('\n').filter(l => l.trim()).length;
+        console.log(`[SMART] ✅ Reconstructed text into approximately ${newLines} rows.`);
+        tracker.endStep({ reconstructedRows: newLines, regex: `/${regexStr}/${flags}` });
+
+        return processedText;
+
+    } catch (e) {
+        console.error('[SMART] ❌ Regex application failed:', e.message);
+        tracker.endStep({ error: `Regex application failed: ${e.message}` });
+        return text; // Return original if failed
+    }
+}
+
+/**
+ * Helper: Extracts structure using LLM-detected headers (Dynamic Schema)
+ */
+async function extractDataWithSmartSchema(text, analysis, tracker, openai) {
+    console.log(`[SMART] Using LLM on first ${analysis.sampleLines} lines only...`);
+    tracker.startStep('LLM Pattern Detection (Sample)');
+
+    const prompt = `Analyze this sample to detect the table structure.
+SAMPLE (${analysis.sampleLines} of ${analysis.totalLines} lines):
+${analysis.sample}
+
+Return JSON with:
+1. "delimiter": inferred delimiter (comma, tab, space, or pipe)
+2. "headers": Array of strings representing the columns found in the text. Use exact terms found in the header row if possible.
+
+Example: {"delimiter": "\t", "headers": ["Date", "Description", "Amount", "Balance"]}`;
+
+    const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+            { role: "system", content: "Return only valid JSON." },
+            { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0
+    });
+
+    tracker.recordTokens(completion.usage);
+    const patternResult = JSON.parse(completion.choices[0].message.content);
+    tracker.endStep({
+        estimatedTokens: 0,
+        actualTokens: completion.usage?.total_tokens,
+        sampleLines: analysis.sampleLines
+    });
+
+    // Apply to ALL lines
+    tracker.startStep('Apply Pattern to All Lines');
+    const lines = text.split('\n').filter(l => l.trim());
+    const delimiter = patternResult.delimiter === 'space' ? /\s{2,}/ :
+        patternResult.delimiter === 'tab' ? '\t' : patternResult.delimiter;
+
+    const records = [];
+    for (let i = 1; i < lines.length; i++) { // Skip first header
+        const parts = lines[i].split(delimiter).map(p => p.trim());
+
+        // Smart Filter: Skip recurring headers
+        const headerKeywords = patternResult.headers || [];
+        const matchCount = headerKeywords.filter(k => lines[i].includes(k)).length;
+        if (matchCount > 2) continue;
+
+        const record = {};
+        if (patternResult.headers) {
+            patternResult.headers.forEach((header, index) => {
+                if (header && index < parts.length) {
+                    record[header] = parts[index];
+                }
+            });
+        }
+        records.push(record);
+    }
+    tracker.endStep({ recordCount: records.length });
+
+    // Group by state
+    tracker.startStep('Group by State');
+    const grouped = {};
+    records.forEach(record => {
+        const state = record.State || 'Unknown';
+        if (!grouped[state]) grouped[state] = [];
+        grouped[state].push(record);
+    });
+    tracker.endStep({ stateCount: Object.keys(grouped).length });
+
+    console.log(`[SMART] ✅ Processed ${records.length} records dynamically!`);
+    const performance = tracker.logReport();
+    return { data: grouped, performance };
 }
 
 module.exports = { processDocumentWithOpenAI };

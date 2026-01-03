@@ -26,7 +26,8 @@ router.use(adminOnly);
 // Get all users with stats (excluding admins)
 router.get('/users', async (req, res) => {
     try {
-        const users = await User.find({ isAdmin: { $ne: true } }).select('-password');
+        // Return ALL users except the one making the request (e.g. Self)
+        const users = await User.find({ _id: { $ne: req.user.id } }).select('-password');
 
         // Enhance users with bucket counts and usage
         const enhancedUsers = await Promise.all(users.map(async (user) => {
