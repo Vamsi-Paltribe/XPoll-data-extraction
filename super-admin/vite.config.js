@@ -16,7 +16,6 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'pdf-worker': ['pdfjs-dist/build/pdf.worker.mjs'],
           'pdf-lib': ['pdfjs-dist'],
           'ocr-lib': ['tesseract.js'],
           'data-utils': ['xlsx', 'papaparse'],
