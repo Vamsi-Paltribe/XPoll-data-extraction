@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Upload, CheckCircle, XCircle, Loader2, Database, RefreshCw, ChevronRight, Send, Paperclip, FileText, LayoutTemplate, MessageSquare, Table2 } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -58,7 +58,6 @@ const ManageData = () => {
         setChatHistory(prev => [...prev, userMsg]);
 
         const currentFile = stagedFile;
-        const currentPrompt = inputValue; // TODO: Send this prompt to backend in future
 
         setInputValue('');
         setStagedFile(null); // Clear stage
@@ -231,10 +230,6 @@ const ManageData = () => {
             newPreview[targetState] = updatedRecords;
         }
 
-        // Recalculate summary
-        const newStates = Object.keys(newPreview);
-        const newTotalRecords = Object.values(newPreview).reduce((sum, recs) => sum + recs.length, 0);
-
         setPreviewData({
             ...previewData,
             preview: newPreview,
@@ -393,12 +388,12 @@ const ManageData = () => {
                         </div>
 
                         {/* FLOATING INPUT AREA - DYNAMIC POSITIONING (GPT STYLE) */}
-                        <div className={`fixed left-0 right-0 px-6 pointer-events-none z-20 transition-all duration-700 ease-in-out bottom-10 translate-y-0 `}>
+                        <div className={`fixed left-0 right-0 px-6 pointer-events-none z-20 transition-all duration-700 ease-in-out bottom-40 translate-y-0`}>
                             <div className="max-w-3xl mx-auto w-full pointer-events-auto">
                                 <div className="relative group">
                                     {/* Glass Container */}
                                     <div className={`bg-white/80 backdrop-blur-2xl border border-white/60 shadow-2xl shadow-slate-300/40 rounded-[32px] p-2 flex items-center gap-2 transition-all duration-500 ease-in-out ${chatHistory.length <= 1
-                                        ? 'h-[7.5rem]' // Hero Mode: Large Box
+                                        ? 'h-[7rem]' // Hero Mode: Large Box
                                         : 'min-h-[60px]' // Standard Mode: Compact
                                         } ${inputValue.length > 50 ? 'rounded-[28px]' : ''}`}>
 
@@ -439,7 +434,7 @@ const ManageData = () => {
                                                     handleSendMessage();
                                                 }
                                             }}
-                                            placeholder="Ask Cortex to extract data..."
+                                            placeholder="Ask Xpoll to extract data..."
                                             className="flex-1 bg-transparent border-none focus:ring-0 focus:outline-none py-3.5 px-2 resize-none text-slate-700 placeholder:text-slate-400 text-base font-medium leading-relaxed overflow-hidden custom-scrollbar"
                                             rows={1}
                                         />

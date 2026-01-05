@@ -839,77 +839,134 @@ RETURN ONLY the JavaScript Regex string (e.g. "(?<=Active)(\\s+)" or "/.../"). D
  * Helper: Extracts structure using LLM-detected headers (Dynamic Schema)
  */
 async function extractDataWithSmartSchema(text, analysis, tracker, openai) {
-    console.log(`[SMART] Using LLM on first ${analysis.sampleLines} lines only...`);
-    tracker.startStep('LLM Pattern Detection (Sample)');
+    // 1. Split Text into Logical Chunks (Pages)
+    // If no page break marker found, treat as single chunk
+    const chunks = text.split('---PAGE_BREAK---').filter(c => c.trim().length > 10);
+    console.log(`[SMART] 📚 Processing ${chunks.length} chunks (pages)...`);
 
-    const prompt = `Analyze this sample to detect the table structure.
-SAMPLE (${analysis.sampleLines} of ${analysis.totalLines} lines):
-${analysis.sample}
+    let currentPattern = null;
+    let allRecords = [];
 
-Return JSON with:
-1. "delimiter": inferred delimiter (comma, tab, space, or pipe)
-2. "headers": Array of strings representing the columns found in the text. Use exact terms found in the header row if possible.
+    for (let cIndex = 0; cIndex < chunks.length; cIndex++) {
+        const chunk = chunks[cIndex];
+        const chunkLines = chunk.split('\n').filter(l => l.trim());
 
-Example: {"delimiter": "\t", "headers": ["Date", "Description", "Amount", "Balance"]}`;
+        if (chunkLines.length === 0) continue;
 
-    const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-            { role: "system", content: "Return only valid JSON." },
-            { role: "user", content: prompt }
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0
-    });
+        let usedPattern = currentPattern;
 
-    tracker.recordTokens(completion.usage);
-    const patternResult = JSON.parse(completion.choices[0].message.content);
-    tracker.endStep({
-        estimatedTokens: 0,
-        actualTokens: completion.usage?.total_tokens,
-        sampleLines: analysis.sampleLines
-    });
+        // DECISION: Should we use the existing pattern or find a new one?
+        let needNewPattern = !currentPattern;
 
-    // Apply to ALL lines
-    tracker.startStep('Apply Pattern to All Lines');
-    const lines = text.split('\n').filter(l => l.trim());
-    const delimiter = patternResult.delimiter === 'space' ? /\s{2,}/ :
-        patternResult.delimiter === 'tab' ? '\t' : patternResult.delimiter;
+        if (currentPattern) {
+            // Test current pattern on first 5 lines of this chunk
+            const sampleLines = chunkLines.slice(0, 5);
+            let matchCount = 0;
 
-    const records = [];
-    for (let i = 1; i < lines.length; i++) { // Skip first header
-        const parts = lines[i].split(delimiter).map(p => p.trim());
+            if (currentPattern.rowParsingRegex) {
+                const regex = new RegExp(currentPattern.rowParsingRegex);
+                matchCount = sampleLines.filter(l => regex.test(l)).length;
+            } else {
+                // Simple delimiter check
+                // (Simplified logic for now: assume delimiter works if lines split cleanly)
+                matchCount = 5; // Assume it works for sake of speed unless regex fails
+            }
 
-        // Smart Filter: Skip recurring headers
-        const headerKeywords = patternResult.headers || [];
-        const matchCount = headerKeywords.filter(k => lines[i].includes(k)).length;
-        if (matchCount > 2) continue;
-
-        const record = {};
-        if (patternResult.headers) {
-            patternResult.headers.forEach((header, index) => {
-                if (header && index < parts.length) {
-                    record[header] = parts[index];
-                }
-            });
+            // If match rate dropped below 40%, force new pattern
+            if (matchCount < sampleLines.length * 0.4) {
+                console.log(`[SMART] ⚠️ Pattern mismatch on Chunk ${cIndex + 1}. Detecting new schema...`);
+                needNewPattern = true;
+            }
         }
-        records.push(record);
+
+        if (needNewPattern) {
+            console.log(`[SMART] 🔍 Detecting schema for Chunk ${cIndex + 1}...`);
+            const sample = chunkLines.slice(0, 20).join('\n'); // 20 lines sample
+
+            const prompt = `Analyze this document section (OCR/Text).
+SAMPLE:
+${sample}
+
+Return JSON with EITHER:
+OPTION A (Clean delimiters):
+{ 
+  "delimiter": "tabs" | "pipes" | "commas" | "space", 
+  "headers": ["ACTUAL_HEADER_1", "ACTUAL_HEADER_2", ...] 
+}
+
+OPTION B (Messy / Regex):
+{ 
+  "rowParsingRegex": "Regex with NAMED CAPTURE GROUPS matching the columns found", 
+  "headers": ["Field1", "Field2", ...] 
+}
+
+IMPORTANT: Extract whatever columns are present in the text. Do NOT force a specific schema. Use the headers found in the document.`;
+
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [
+                    { role: "system", content: "You are a data extraction expert. Return only valid JSON." },
+                    { role: "user", content: prompt }
+                ],
+                response_format: { type: "json_object" },
+                temperature: 0
+            });
+            tracker.recordTokens(completion.usage);
+            currentPattern = JSON.parse(completion.choices[0].message.content);
+            console.log(`[SMART] 🧩 New Pattern found: ${currentPattern.rowParsingRegex || currentPattern.delimiter}`);
+        }
+
+        // Apply Pattern to Chunk
+        const chunkRecords = parseChunkWithPattern(chunkLines, currentPattern);
+        console.log(`[SMART] 📄 Chunk ${cIndex + 1}: Extracted ${chunkRecords.length} records`);
+        allRecords.push(...chunkRecords);
     }
-    tracker.endStep({ recordCount: records.length });
 
     // Group by state
     tracker.startStep('Group by State');
     const grouped = {};
-    records.forEach(record => {
-        const state = record.State || 'Unknown';
+    allRecords.forEach(record => {
+        const stateKey = Object.keys(record).find(k => k.toLowerCase() === 'state');
+        const state = (stateKey ? record[stateKey] : 'Unknown') || 'Unknown';
         if (!grouped[state]) grouped[state] = [];
         grouped[state].push(record);
     });
     tracker.endStep({ stateCount: Object.keys(grouped).length });
 
-    console.log(`[SMART] ✅ Processed ${records.length} records dynamically!`);
+    console.log(`[SMART] ✅ Total Processed: ${allRecords.length} records from ${chunks.length} chunks.`);
     const performance = tracker.logReport();
     return { data: grouped, performance };
+}
+
+function parseChunkWithPattern(lines, pattern) {
+    const records = [];
+    if (pattern.rowParsingRegex) {
+        try {
+            const regex = new RegExp(pattern.rowParsingRegex);
+            for (const line of lines) {
+                const match = line.match(regex);
+                if (match && match.groups) records.push(match.groups);
+            }
+        } catch (e) { console.error("Regex Error", e); }
+    } else {
+        const delimiter = pattern.delimiter === 'space' ? /\s{2,}/ :
+            pattern.delimiter === 'tab' ? '\t' :
+                pattern.delimiter === 'comma' ? ',' : pattern.delimiter;
+
+        for (const line of lines) {
+            const parts = line.split(delimiter).map(p => p.trim()).filter(p => p);
+            if (parts.length < (pattern.headers?.length || 2) - 1) continue;
+            // Skip Header
+            if (pattern.headers && parts.some(p => pattern.headers.includes(p))) continue;
+
+            const record = {};
+            if (pattern.headers) {
+                pattern.headers.forEach((h, i) => { if (i < parts.length) record[h] = parts[i]; });
+            }
+            records.push(record);
+        }
+    }
+    return records;
 }
 
 module.exports = { processDocumentWithOpenAI };

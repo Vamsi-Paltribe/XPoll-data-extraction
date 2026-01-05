@@ -85,7 +85,7 @@ export async function parsePDFToJSON(file) {
             const page = await pdf.getPage(i);
             const textContent = await page.getTextContent();
             const pageText = textContent.items.map(item => item.str).join(' ');
-            fullText += pageText + "\n";
+            fullText += pageText + "\n---PAGE_BREAK---\n";
         }
 
         console.log(`[PDF Parser] Extracted ${fullText.length} characters from ${pdf.numPages} pages`);

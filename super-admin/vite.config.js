@@ -12,4 +12,17 @@ export default defineConfig({
   server: {
     port: 5174,
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'pdf-worker': ['pdfjs-dist/build/pdf.worker.mjs'],
+          'pdf-lib': ['pdfjs-dist'],
+          'ocr-lib': ['tesseract.js'],
+          'data-utils': ['xlsx', 'papaparse'],
+          'vendor': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
+        }
+      }
+    }
+  }
 })
