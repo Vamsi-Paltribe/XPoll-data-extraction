@@ -1,10 +1,11 @@
-const mongoose = require('mongoose');
-const User = require('./backend/models/User');
-const dotenv = require('dotenv');
+import mongoose from 'mongoose';
+import { User } from '../models/User';
+import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '../../.env') });
 
-const promote = async (email) => {
+const promote = async (email: string) => {
     try {
         await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/xpoll');
         const user = await User.findOneAndUpdate({ email }, { isAdmin: true }, { new: true });
@@ -22,7 +23,7 @@ const promote = async (email) => {
 
 const email = process.argv[2];
 if (!email) {
-    console.log("Usage: node promote-admin.js <email>");
+    console.log("Usage: npx ts-node backend/scripts/promote-admin.ts <email>");
     process.exit(1);
 }
 
