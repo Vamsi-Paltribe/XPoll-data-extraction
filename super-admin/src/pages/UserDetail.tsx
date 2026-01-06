@@ -246,7 +246,7 @@ const UserLedger: React.FC<UserLedgerProps> = ({ userId }) => {
                                         "text-sm font-extrabold",
                                         log.type === 'debit' ? "text-slate-900" : "text-emerald-500"
                                     )}>
-                                        {log.type === 'debit' ? '-' : '+'}{log.amount}
+                                        {log.type === 'debit' ? '-' : '+'}{log.amount.toFixed(2)}
                                     </span>
                                 </td>
                             </tr>
@@ -322,7 +322,7 @@ const UserDetail = () => {
                                     Wallet Balance
                                 </p>
                                 <p className="text-2xl font-bold text-white">
-                                    {user.tokens} <span className="text-sm font-bold text-slate-500">COINS</span>
+                                    {user.tokens?.toFixed(2)} <span className="text-sm font-bold text-slate-500">COINS</span>
                                 </p>
                             </div>
                         </div>

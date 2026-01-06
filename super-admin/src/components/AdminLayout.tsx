@@ -3,8 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import {
-    Shield, Coins,
-    LogOut, Database, LayoutGrid, Wallet, UserPlus
+    Shield, LogOut, Database, LayoutGrid, Wallet, UserPlus
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -52,7 +51,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
         <div className="min-h-screen bg-background font-sans">
             {/* Admin Header */}
             <header className="h-20 bg-white border-b border-slate-200 sticky top-0 z-50 px-8">
-                <div className="max-w-[1700px] mx-auto h-full flex items-center justify-between">
+                <div className="mx-auto h-full flex items-center justify-between">
                     <div className="flex items-center gap-10">
                         <Link to="/" className="flex items-center gap-4 group">
                             <div className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-slate-900/10 group-hover:scale-95 transition-all">
@@ -86,7 +85,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                 </div>
             </header>
 
-            <main className="max-w-[1700px] mx-auto">
+            <main className="mx-auto">
                 {children}
             </main>
         </div>

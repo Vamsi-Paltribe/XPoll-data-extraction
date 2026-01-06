@@ -338,139 +338,41 @@ function generateSummary(groupedData: any) {
     };
 }
 
-/**
- * POST /admin/upload-document/commit
- * Commit previously extracted data to MongoDB (Master Global Records)
- */
+import { commitDataToRegistry } from '../services/commitService';
+
+// ... (imports)
+
 // @ts-ignore
 router.post('/upload-document/commit', auth, adminOnly, async (req: AuthRequest, res: Response) => {
     try {
         console.log('[Upload Commit] Received commit request');
 
         const { extractedData, saveAsTemplate, templateName, logic, signature } = req.body;
-        // console.log('[Debugging] Commit Body:', JSON.stringify(req.body, null, 2));
 
         if (!extractedData || typeof extractedData !== 'object') {
             return res.status(400).json({ error: 'Invalid data format' });
         }
 
-        // extractedData structure: { "California": [record1, record2], "Texas": [...] }
-        const states = Object.keys(extractedData);
-        let totalRecords = 0;
-
-        for (const stateName of states) {
-            const records = extractedData[stateName];
-            if (!records || records.length === 0) continue;
-
-            console.log(`[Upload Commit] Processing ${records.length} records for ${stateName}`);
-
-            // 1. Find or Create Global Bucket for this State
-            let bucket = await Bucket.findOne({ name: stateName, type: 'global' });
-
-            if (!bucket) {
-                console.log(`[Upload Commit] Creating new Global Bucket for ${stateName}`);
-                bucket = new Bucket({
-                    name: stateName,
-                    description: `Master Data Registry for ${stateName}`,
-                    type: 'global',
-                    createdBy: req.user.id,
-                    sourceUrl: 'UPLOADED_VIA_ADMIN_DASHBOARD'
-                });
-                await bucket.save();
-            }
-
-            // 2. Prepare Records for Bulk Insert
-            const customerRecords = records.map((record: any) => ({
-                bucketId: bucket!._id,
-                data: record, // Store the flexible data here
-                keyHash: record.keyHash || Math.random().toString(36).substring(7), // Fallback
-                history: [{
-                    action: 'imported',
-                    details: `Imported via Admin Upload by ${req.user.id}`
-                }]
-            }));
-
-            // 3. Bulk Insert
-            // Note: ordered: false prevents one failure from stopping the whole batch
-            let insertedCount = 0;
-            try {
-                // @ts-ignore
-                const result = await CustomerRecord.insertMany(customerRecords, { ordered: false });
-                insertedCount = result.length;
-            } catch (err: any) {
-                if (err.writeErrors) {
-                    insertedCount = err.insertedDocs.length;
-                    console.log(`[Upload Commit] Inserted ${insertedCount} records. (${err.writeErrors.length} duplicates skipped)`);
-                } else {
-                    throw err;
-                }
-            }
-
-            // 4. Update METADATA (Headers & Cities) - O(1) Read Optimization
-            const existingHeaders = new Set(bucket!.availableHeaders || []);
-            const existingCities = new Set(bucket!.availableCities || []);
-
-            records.forEach((rec: any) => {
-                // Headers
-                Object.keys(rec).forEach(k => {
-                    if (!k.startsWith('_') && k !== 'bucketId' && k !== 'keyHash') {
-                        existingHeaders.add(k);
-                    }
-                });
-                // Cities
-                const city = rec.City || rec.CITY || rec.city;
-                if (city && typeof city === 'string') {
-                    existingCities.add(city.trim());
-                }
-            });
-
-            bucket!.availableHeaders = Array.from(existingHeaders).sort();
-            bucket!.availableCities = Array.from(existingCities).sort();
-            bucket!.lastSyncedAt = new Date();
-
-            await bucket!.save();
-            console.log(`[Upload Commit] Updated metadata for ${bucket!.name}: ${bucket!.availableHeaders.length} headers, ${bucket!.availableCities.length} cities`);
-
-            totalRecords += insertedCount;
-        }
+        const result = await commitDataToRegistry({
+            userId: req.user.id,
+            extractedData,
+            saveAsTemplate,
+            templateName,
+            logic,
+            signature
+        });
 
         const summary = {
-            totalStates: states.length,
-            totalRecords: totalRecords,
-            states: states.map(s => ({ name: s, recordCount: extractedData[s].length }))
+            totalStates: result.states.length,
+            totalRecords: result.totalRecords,
+            states: result.states
         };
 
         res.json({
             success: true,
-            message: `Successfully saved ${totalRecords} Master Records across ${states.length} state(s) to Database`,
+            message: `Successfully saved ${result.totalRecords} Master Records across ${result.states.length} state(s) to Database`,
             summary
         });
-
-        console.log('[Upload Commit] Commit completed successfully');
-
-        // NEW: Save as Template if requested
-        if (saveAsTemplate && templateName && logic && signature) {
-            try {
-                console.log(`[Template System] Saving new template: "${templateName}"`);
-
-                // Upsert to avoid race conditions
-                await ParsingTemplate.findOneAndUpdate(
-                    { signature },
-                    {
-                        name: templateName,
-                        logic: logic,
-                        signature: signature,
-                        createdBy: req.user.id,
-                        $inc: { usageCount: 1 }
-                    },
-                    { upsert: true, new: true }
-                );
-                console.log(`[Template System] ✅ Template saved successfully!`);
-            } catch (templateErr: any) {
-                console.error(`[Template System] ⚠️ Failed to save template: ${templateErr.message}`);
-                // Don't fail the main request, just log error
-            }
-        }
 
     } catch (error: any) {
         console.error('[Upload Commit] Error:', error.message);

@@ -1,5 +1,5 @@
 // X-Poll Backend Server
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import mongoose from 'mongoose';
 import cors, { CorsOptions } from 'cors';
 import passport from 'passport';
@@ -8,8 +8,24 @@ import jwt from 'jsonwebtoken';
 
 dotenv.config();
 
+import { createBullBoard } from '@bull-board/api';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { ExpressAdapter } from '@bull-board/express';
+import { imageQueue } from './queue/index';
+
 // Initialize Express
 const app = express();
+
+// Bull Board Setup
+const serverAdapter = new ExpressAdapter();
+serverAdapter.setBasePath('/admin/queues');
+
+createBullBoard({
+  queues: [new BullMQAdapter(imageQueue)],
+  serverAdapter: serverAdapter,
+});
+
+app.use('/admin/queues', serverAdapter.getRouter());
 
 // Middleware
 const corsOptions: CorsOptions = {
@@ -62,18 +78,21 @@ app.get('/api/auth/google/callback', passport.authenticate('google', {
 const PORT = process.env.PORT || 5000;
 
 // Routes
-// Routes
 import authRoutes from './routes/auth';
 import bucketRoutes from './routes/buckets';
 import adminRoutes from './routes/admin';
 import adminDataRoutes from './routes/admin-data';
 import uploadRoutes from './routes/upload';
-import './config/passport'; // Register passport strategies
+import imageUploadRoutes from './routes/image-upload';
+import jobsRoutes from './routes/jobs';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/buckets', bucketRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/admin', adminDataRoutes);
-app.use('/api/admin', uploadRoutes); // PDF upload route
+app.use('/api/admin', adminDataRoutes); // Merged into /api/admin
+app.use('/api/admin', uploadRoutes); // Admin uploads
+app.use('/api/upload', imageUploadRoutes); // General upload
+app.use('/api/jobs', jobsRoutes);
+// setupWorker();
 
 app.listen(PORT, () => console.log(`Server started on port ${PORT}`));

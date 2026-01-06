@@ -106,7 +106,7 @@ const Ledger = () => {
                                             "text-sm font-extrabold",
                                             log.type === 'debit' ? "text-slate-900" : "text-emerald-500"
                                         )}>
-                                            {log.type === 'debit' ? '-' : '+'}{log.amount}
+                                            {log.type === 'debit' ? '-' : '+'}{log.amount.toFixed(2)}
                                         </span>
                                     </td>
                                 </tr>

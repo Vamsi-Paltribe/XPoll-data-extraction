@@ -1,12 +1,9 @@
 import { useState, useRef } from 'react';
-import { Upload, CheckCircle, XCircle, Loader2, Database, RefreshCw, ChevronRight, Send, Paperclip, FileText, LayoutTemplate, MessageSquare, Table2 } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Loader2, Database, RefreshCw, Send, Paperclip, FileText, LayoutTemplate, MessageSquare, CheckCircle2, Clock, AlertCircle, ArrowRight } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
-import * as XLSX from 'xlsx';
 import * as pdfjsLib from 'pdfjs-dist';
-import { parseImageToJSON } from '../utils/dataParser';
 
-// 1. Import the worker correctly using Vite's ?url syntax
 // @ts-ignore
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
 
@@ -43,10 +40,32 @@ interface PreviewData {
     logic?: any;
     signature?: string;
 }
+const STATUS_CONFIG = {
+    completed: {
+        color: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+        icon: <CheckCircle2 className="w-3 h-3" />,
+        label: 'Completed'
+    },
+    processing: {
+        color: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+        icon: <Loader2 className="w-3 h-3 animate-spin" />,
+        label: 'Processing'
+    },
+    waiting_approval: {
+        color: 'bg-amber-50 text-amber-700 border-amber-100',
+        icon: <Clock className="w-3 h-3" />,
+        label: 'Needs Review'
+    },
+    failed: {
+        color: 'bg-rose-50 text-rose-700 border-rose-100',
+        icon: <AlertCircle className="w-3 h-3" />,
+        label: 'Failed'
+    }
+};
 
 const ManageData = () => {
     // UI State
-    const [activeTab, setActiveTab] = useState<'chat' | 'registry'>('chat');
+    const [activeTab, setActiveTab] = useState<'chat' | 'Bin' | 'registry'>('chat');
     const [inputValue, setInputValue] = useState('');
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([
         { type: 'system', content: 'Hello! I am your Data Assistant. Drag & drop a file (PDF, CSV, Excel, Image) or type instructions to get started.' }
@@ -78,11 +97,68 @@ const ManageData = () => {
         }
     };
 
+    // --- JOB DASHBOARD LOGIC ---
+    const { data: jobs, refetch: refetchJobs } = useQuery({
+        queryKey: ['jobs'],
+        queryFn: async () => {
+            const res = await api.get('/jobs');
+            return res.data;
+        },
+        refetchInterval: 5000 // Poll every 5s
+    });
+
+    const [activeJobId, setActiveJobId] = useState<string | null>(null);
+
+    const handleReviewJob = async (job: any) => {
+        if (!job.result) return;
+        setActiveJobId(job._id);
+        setPreviewData({
+            tier: job.confidence > 0.8 ? 1 : 2, // Mock tier based on confidence
+            preview: job.result,
+            summary: {
+                states: Object.entries(job.result).map(([name, records]: [string, any]) => ({
+                    name,
+                    recordCount: records.length,
+                    sampleRecords: records.slice(0, 5)
+                }))
+            }
+        });
+    };
+
+    // Override commit for Jobs
+    const handleJobCommit = async () => {
+        if (!activeJobId || !previewData) return;
+        setCommitting(true);
+        try {
+            const res = await api.post(`/jobs/${activeJobId}/approve`, {
+                extractedData: previewData.preview
+            });
+
+            setChatHistory(prev => [...prev, {
+                type: 'system',
+                content: `✅ Job approved. ${res.data.message}`,
+                isSuccess: true
+            }]);
+
+            setPreviewData(null);
+            setActiveJobId(null);
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            queryClient.invalidateQueries({ queryKey: ['master-data'] });
+        } catch (err: any) {
+            setError(err.response?.data?.error || 'Approval failed.');
+        } finally {
+            setCommitting(false);
+        }
+    };
+    // ---------------------------
+
+
+
     const handleSendMessage = async () => {
         if (!inputValue.trim() && !stagedFile) return;
 
         // Add User Message
-        const userMsg = {
+        const userMsg: ChatMessage = {
             type: 'user',
             content: inputValue,
             file: stagedFile ? { name: stagedFile.name, size: stagedFile.size } : null
@@ -104,102 +180,43 @@ const ManageData = () => {
         }
     };
 
-    const processFile = async (file) => {
+    const processFile = async (file: File) => {
         setUploading(true);
-        // Add "Processing" bubble
-        setChatHistory(prev => [...prev, { type: 'system', isProcessing: true, content: `Processing ${file.name}...` }]);
+        const processingMsg: ChatMessage = { type: 'system', isProcessing: true, content: `Uploading & Processing ${file.name}...` };
+        setChatHistory(prev => [...prev, processingMsg]);
 
         try {
-            let parsedData = null;
-            let fileType = file.name.split('.').pop().toLowerCase();
+            const formData = new FormData();
+            formData.append('file', file);
 
-            // --- EXCEL / CSV ---
-            if (['xlsx', 'xls', 'csv'].includes(fileType)) {
-                try {
-                    const data = await file.arrayBuffer();
-                    const workbook = XLSX.read(data);
-                    const sheetName = workbook.SheetNames[0];
-                    const json = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-                    parsedData = { type: 'structured', content: json };
-                } catch (csvError) {
-                    throw new Error(`CSV/Excel parsing failed: ${csvError.message}`);
+            // Send to Backend S3 Upload & Queue
+            const res = await api.post('/upload/image', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
                 }
-            }
-            // --- PDF ---
-            else if (fileType === 'pdf') {
-                const arrayBuffer = await file.arrayBuffer();
-                const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-                const pdf = await loadingTask.promise;
+            });
 
-                let fullTextConcatenated = "";
-                let pagesData = [];
-                for (let i = 1; i <= pdf.numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const textContent = await page.getTextContent();
-                    const pageText = textContent.items.map(item => item.str).join(' ');
-                    pagesData.push({ page: i, content: pageText });
-                    fullTextConcatenated += pageText + "\n";
-                }
-
-                parsedData = {
-                    type: 'pdf_text',
-                    content: fullTextConcatenated,
-                    metadata: { totalPages: pdf.numPages, structure: pagesData }
-                };
-            }
-            // --- IMAGE ---
-            else if (['png', 'jpg', 'jpeg', 'bmp', 'gif'].includes(fileType)) {
-                const result = await parseImageToJSON(file, (progress) => {
-                    // Optional: Update bubble with specific OCR progress if needed
-                });
-
-                if (result.success) {
-                    parsedData = {
-                        type: 'image_ocr',
-                        content: result.text,
-                        metadata: { confidence: result.confidence, words: result.words, lines: result.lines }
-                    };
-                } else {
-                    throw new Error(`OCR failed: ${result.error}`);
-                }
-            }
-            // --- TEXT ---
-            else if (fileType === 'txt') {
-                const text = await file.text();
-                parsedData = { type: 'text', content: text };
-            }
-
-            if (parsedData) {
-                // Send to Backend
-                const res = await api.post('/admin/upload-document/preview', {
-                    fileName: file.name,
-                    fileData: parsedData
-                });
-
-                setPreviewData(res.data);
-
+            if (res.data.success) {
                 // Update Chat with Success
                 setChatHistory(prev => {
                     const filtered = prev.filter(m => !m.isProcessing); // Remove processing msg
-                    return [...filtered, {
+                    const successMsg: ChatMessage = {
                         type: 'system',
-                        content: `Successfully processed ${file.name}. Please review the extracted data.`,
-                        action: 'review_ready'
-                    }];
+                        content: `Successfully uploaded ${file.name}. \n\nURL: ${res.data.url}\n\nIt has been queued for processing. \nCheck backend logs for worker output.`,
+                        isSuccess: true
+                    };
+                    return [...filtered, successMsg];
                 });
-
-                if (res.data.tier !== 0) {
-                    setTemplateName(file.name.split('.')[0] + ' Parser');
-                }
             } else {
-                throw new Error("Unsupported file format");
+                throw new Error("Upload failed");
             }
 
-        } catch (err) {
+        } catch (err: any) {
             console.error("Processing Error:", err);
             setChatHistory(prev => {
                 const filtered = prev.filter(m => !m.isProcessing);
-                return [...filtered, { type: 'system', isError: true, content: `Error: ${err.message || 'Failed to process file'}` }];
+                const errorMsg: ChatMessage = { type: 'system', isError: true, content: `Error: ${err.message || 'Failed to process file'}` };
+                return [...filtered, errorMsg];
             });
         } finally {
             setUploading(false);
@@ -208,6 +225,13 @@ const ManageData = () => {
 
     const handleCommit = async () => {
         if (!previewData) return;
+
+        // Delegate to Job Commit if active
+        if (activeJobId) {
+            await handleJobCommit();
+            return;
+        }
+
         setCommitting(true);
         try {
             const res = await api.post('/admin/upload-document/commit', {
@@ -226,7 +250,7 @@ const ManageData = () => {
             }]);
 
             setPreviewData(null);
-            queryClient.invalidateQueries(['master-data']); // Refresh registry
+            queryClient.invalidateQueries({ queryKey: ['master-data'] }); // Refresh registry
         } catch (err) {
             setError(err.response?.data?.error || 'Commit failed.');
         } finally {
@@ -290,11 +314,11 @@ const ManageData = () => {
                         AI Extraction
                     </button>
                     <button
-                        onClick={() => setActiveTab('registry')}
-                        className={`flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm transition-all ${activeTab === 'registry' ? 'bg-black text-white shadow-lg shadow-black/20' : 'text-slate-500 hover:bg-slate-100'}`}
+                        onClick={() => setActiveTab('Bin')}
+                        className={`flex items-center gap-2 px-6 py-2.5 rounded-full font-bold text-sm transition-all ${activeTab === 'Bin' ? 'bg-black text-white shadow-lg shadow-black/20' : 'text-slate-500 hover:bg-slate-100'}`}
                     >
-                        <Table2 className="w-4 h-4" />
-                        Global Registry
+                        <Upload className="w-4 h-4" />
+                        Bin
                     </button>
                 </div>
             </div>
@@ -306,13 +330,15 @@ const ManageData = () => {
                 {/* 1. CHAT TAB - AGENTIC (RESTORED & REFINED) */}
                 {activeTab === 'chat' && (
                     <div className="flex flex-col relative bg-slate-50 overflow-hidden ">
+                        {/* Messages Area - Centered Column */}
+
                         {/* Ambient Background Effects */}
                         <div className="absolute top-10 right-0 w-[500px] h-[500px] bg-purple-200/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2 pointer-events-none" />
                         <div className="absolute bottom-10 left-0 w-[500px] h-[500px] bg-blue-200/20 rounded-full blur-[100px] translate-y-1/2 -translate-x-1/2 pointer-events-none" />
 
                         {/* Messages Area - Centered Column */}
                         <div className="flex-1 overflow-y-auto w-full scroll-smooth z-10 custom-scrollbar">
-                            <div className="max-w-3xl mx-auto px-6 py-8 flex flex-col ">
+                            <div className="max-w-3xl mx-auto px-6 pb-[6rem] flex flex-col ">
 
                                 {/* EMPTY STATE HERO */}
                                 {chatHistory.length <= 1 ? (
@@ -420,7 +446,7 @@ const ManageData = () => {
                         </div>
 
                         {/* FLOATING INPUT AREA - DYNAMIC POSITIONING (GPT STYLE) */}
-                        <div className={`fixed left-0 right-0 px-6 pointer-events-none z-20 transition-all duration-700 ease-in-out bottom-40 translate-y-0`}>
+                        <div className={`fixed left-0 right-0 px-6 pointer-events-none z-20 transition-all duration-700 ease-in-out bottom-20 translate-y-0`}>
                             <div className="max-w-3xl mx-auto w-full pointer-events-auto">
                                 <div className="relative group">
                                     {/* Glass Container */}
@@ -489,90 +515,110 @@ const ManageData = () => {
                     </div>
                 )}
 
-                {/* 2. REGISTRY TAB */}
-                {activeTab === 'registry' && (
-                    <div className="h-full overflow-y-auto p-8 max-w-7xl mx-auto w-full">
-                        <div className="flex items-center justify-between mb-8">
-                            <div>
-                                <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Global Registry</h2>
-                                <p className="text-slate-500 text-sm font-medium mt-1">Verified master data available to all users</p>
-                            </div>
-                            <button
-                                onClick={() => refetchMaster()}
-                                disabled={isLoadingMaster}
-                                className="p-2 hover:bg-slate-100 rounded-full transition-colors bg-white border border-slate-200 shadow-sm"
-                            >
-                                <RefreshCw className={`w-5 h-5 text-slate-600 ${isLoadingMaster ? 'animate-spin' : ''}`} />
-                            </button>
-                        </div>
+                {/* 2. Bin TAB */}
+                {activeTab === 'Bin' && (
+                    <div className="flex flex-col h-full bg-slate-50/50 overflow-hidden">
+                        <div className="h-full overflow-y-auto w-full p-8 max-w-7xl mx-auto">
 
-                        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
-                            {isLoadingMaster ? (
-                                <div className="p-24 flex flex-col items-center justify-center">
-                                    <Loader2 className="w-10 h-10 text-slate-300 animate-spin mb-4" />
-                                    <p className="text-xs font-bold uppercase tracking-widest text-slate-400">Loading Registry...</p>
+                            {/* Header Section */}
+                            <div className="flex items-end justify-between mb-10">
+                                <div>
+                                    <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Recent Bin</h2>
+                                    <p className="text-slate-500 text-sm font-medium mt-1">
+                                        Manage your recent data extraction cycles and job statuses.
+                                    </p>
                                 </div>
-                            ) : masterData && masterData.data.length > 0 ? (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-sm">
-                                        <thead className="bg-slate-50 border-b border-slate-100">
-                                            <tr>
-                                                <th className="px-6 py-4 font-bold text-slate-500 uppercase tracking-wider text-xs">Source / Bucket</th>
-                                                <th className="px-6 py-4 font-bold text-slate-500 uppercase tracking-wider text-xs">Records</th>
-                                                <th className="px-6 py-4 font-bold text-slate-500 uppercase tracking-wider text-xs">Imported At</th>
-                                                <th className="px-6 py-4 text-right font-bold text-slate-500 uppercase tracking-wider text-xs">Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-50">
-                                            {masterData.data.map((record) => (
-                                                <tr key={record._id} className="hover:bg-slate-50/50 transition-colors group">
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center border border-purple-100">
-                                                                <Database className="w-5 h-5" />
-                                                            </div>
-                                                            <div>
-                                                                <span className="font-bold text-slate-900 block">
-                                                                    {record.bucketId?.name || 'Unknown Bucket'}
-                                                                </span>
-                                                                <span className="text-xs text-slate-400 font-mono">ID: {record._id.slice(-6)}</span>
-                                                            </div>
+                                <button
+                                    onClick={refetchJobs}
+                                    className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl shadow-sm text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all active:scale-95"
+                                >
+                                    <RefreshCw className="w-4 h-4 text-slate-500" />
+                                    Refresh
+                                </button>
+                            </div>
+
+                            {/* Grid Section */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                {jobs?.map((job) => {
+                                    const config = STATUS_CONFIG[job.status] || { color: 'bg-slate-100 text-slate-600', label: job.status, icon: null };
+
+                                    return (
+                                        <div
+                                            key={job._id}
+                                            className="group relative flex flex-col bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all duration-300"
+                                        >
+                                            {/* Card Header: Icon + Status */}
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div className="p-2.5 bg-indigo-50 rounded-xl text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                                                    <FileText className="w-5 h-5" />
+                                                </div>
+                                                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-bold uppercase tracking-wider ${config.color}`}>
+                                                    {config.icon}
+                                                    {config.label}
+                                                </div>
+                                            </div>
+
+                                            {/* Card Body: Title + Date */}
+                                            <div className="flex-1 min-w-0 mb-6">
+                                                <h3
+                                                    className="font-bold text-slate-900 truncate leading-snug group-hover:text-indigo-600 transition-colors"
+                                                    title={job.originalName}
+                                                >
+                                                    {job.originalName}
+                                                </h3>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <Clock className="w-3 h-3 text-slate-400" />
+                                                    <p className="text-[11px] text-slate-500 font-medium">
+                                                        {new Date(job.createdAt).toLocaleDateString()} • {new Date(job.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* Card Footer: Dynamic Actions */}
+                                            <div className="pt-4 border-t border-slate-100">
+                                                {job.status === 'waiting_approval' || job.status === 'completed' ? (
+                                                    <button
+                                                        onClick={() => handleReviewJob(job)}
+                                                        className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-900 rounded-xl text-xs font-bold text-white hover:bg-indigo-600 shadow-lg shadow-slate-200 transition-all active:scale-[0.98]"
+                                                    >
+                                                        Review Data
+                                                        <ArrowRight className="w-3.5 h-3.5" />
+                                                    </button>
+                                                ) : job.status === 'failed' ? (
+                                                    <div className="flex flex-col gap-1 text-[11px] text-rose-600 bg-rose-50/50 p-3 rounded-xl border border-rose-100">
+                                                        <div className="flex items-center gap-1 font-bold italic">
+                                                            <AlertCircle className="w-3 h-3" />
+                                                            Extraction Failed
                                                         </div>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
-                                                            {Array.isArray(record.data) ? record.data.length : 1} items
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4">
-                                                        <span className="text-xs font-bold text-slate-500">
-                                                            {new Date(record.createdAt).toLocaleDateString()}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-right">
-                                                        {/* VIEW DATA BUTTON (Opens Modal - Can reuse Preview Logic merely for display) */}
-                                                        <button className="text-slate-400 hover:text-purple-600 font-bold text-xs flex items-center gap-1 justify-end w-full group-hover:translate-x-1 transition-all">
-                                                            View Data <ChevronRight className="w-4 h-4" />
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            ) : (
-                                <div className="p-24 text-center">
-                                    <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                                        <Database className="w-10 h-10 text-slate-300" />
+                                                        <p className="opacity-80 line-clamp-1" title={job.error}>{job.error}</p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center justify-center gap-2 w-full py-2.5 bg-slate-50 rounded-xl text-xs font-bold text-slate-400 border border-slate-100 italic">
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                        Crunching data...
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {/* Empty State */}
+                                {(!jobs || jobs.length === 0) && (
+                                    <div className="col-span-full py-24 flex flex-col items-center justify-center bg-white rounded-3xl border-2 border-dashed border-slate-200">
+                                        <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center mb-6">
+                                            <Upload className="w-10 h-10 text-indigo-300" />
+                                        </div>
+                                        <h3 className="text-lg font-bold text-slate-900">Your bin is empty</h3>
+                                        <p className="text-slate-500 text-sm max-w-xs text-center mt-2 font-medium">
+                                            Start by uploading a document in the AI Extraction tab to see your jobs here.
+                                        </p>
                                     </div>
-                                    <h3 className="text-xl font-bold text-slate-900">Registry Empty</h3>
-                                    <p className="text-slate-500 mt-2 max-w-sm mx-auto">Upload documents in the "AI Extraction" tab to populate this global registry.</p>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
-
             </div>
 
             {/* PREVIEW MODAL (Shared) */}

@@ -69,7 +69,7 @@ const Dashboard = () => {
         <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
                 <StatCard label="Total Users" value={users.length} icon={Users} color="bg-blue-500" />
-                <StatCard label="Circulating Tokens" value={totalTokens} icon={Coins} color="bg-amber-500" />
+                <StatCard label="Circulating Tokens" value={totalTokens.toFixed(2)} icon={Coins} color="bg-amber-500" />
                 <StatCard label="Active Buckets" value={totalBuckets} icon={Database} color="bg-emerald-500" />
                 <StatCard label="Total Operations" value={totalUsage} icon={Activity} color="bg-slate-800" />
             </div>
@@ -121,7 +121,7 @@ const Dashboard = () => {
                                     <td className="px-6 py-6 text-center">
                                         <div className="flex items-center justify-center gap-2">
                                             <Coins className="w-3.5 h-3.5 text-amber-500" />
-                                            <span className="text-sm font-extrabold text-slate-900">{user.tokens}</span>
+                                            <span className="text-sm font-extrabold text-slate-900">{user.tokens?.toFixed(2)}</span>
                                         </div>
                                     </td>
                                     <td className="px-6 py-6 text-center">
