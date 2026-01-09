@@ -35,7 +35,12 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
             processableData = result.content;
             rawPages = result.pages; // Keep raw pages for fallback
             processableType = 'text';
-            console.log(`[OpenAI Processor] 📄 PDF Extracted. Pages: ${rawPages.length}, Total Length: ${processableData.length}`);
+
+            if (result.isRaw) {
+                console.log(`[OpenAI Processor] ⚠️ Using RAW PDF stream (Layout lost, content preserved). Length: ${processableData.length}`);
+            } else {
+                console.log(`[OpenAI Processor] 📄 PDF Extracted (Layout Preserved). Pages: ${rawPages.length}, Total Length: ${processableData.length}`);
+            }
         }
         else if (type === 'image') {
             const imageBuffer = Buffer.from(data, 'base64');
@@ -96,8 +101,9 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
             }
         }
 
-        if (!executionResult.success) {
-            console.warn(`[OpenAI Processor] ⚠️ Execution failed: ${executionResult.error}`);
+        if (!executionResult.success || (executionResult.success && (!executionResult.data || executionResult.recordsProcessed === 0))) {
+            const failureReason = executionResult.error || "Scenario A yield 0 records (Logic Mismatch)";
+            console.warn(`[OpenAI Processor] ⚠️ Execution failed or empty: ${failureReason}`);
 
             // AUTO-HEAL: If logic failed (e.g. invalid regex), invalidate the template so next run is fresh!
             if (logicResult.source === 'template' || logicResult.source === 'gpt') {
@@ -171,21 +177,25 @@ async function processPagesDirectly(pages: string[], fileName: string): Promise<
 
     for (let i = 0; i < pages.length; i++) {
         const pageText = pages[i];
-        if (pageText.trim().length < 50) continue; // Skip empty pages
+        if (pageText.trim().length < 50) {
+            console.log(`[OpenAI Processor] ⚠️ Skipping Page ${i + 1} (Empty/Too Short)`);
+            continue; // Skip empty pages
+        }
 
-        console.log(`[OpenAI Processor] Processing Page ${i + 1}/${pages.length}...`);
+        console.log(`[OpenAI Processor] 🐢 Processing Page ${i + 1}/${pages.length} (Scenario B - Sequential Fallback)...`);
 
         const prompt = `You are a Data Extractor. Extract structured data from this document page.
 TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
 (Extract other valid fields if present).
 
 PAGE CONTENT:
-${pageText.substring(0, 5000)}
+${pageText.substring(0, 15000)}
 
 INSTRUCTIONS:
 1. Return a JSON Object with a "data" key containing an Array of Objects.
 2. If no data found, return { "data": [] }.
 3. Handle "smashed" text carefully.
+4. **CRITICAL**: Return VALID JSON ONLY. No markdown blocks.
 
 RETURN JSON ONLY.`;
 
@@ -198,10 +208,14 @@ RETURN JSON ONLY.`;
             });
             const result = JSON.parse(completion.choices[0].message.content || '{}');
             if (result.data && Array.isArray(result.data)) {
+                console.log(`[OpenAI Processor] ✅ Page ${i + 1} Success: Extracted ${result.data.length} records.`);
                 allRecords.push(...result.data);
+            } else {
+                console.warn(`[OpenAI Processor] ⚠️ Page ${i + 1} yielded no data array.`);
             }
         } catch (e: any) {
-            console.error(`[OpenAI Processor] Failed to process page ${i + 1}:`, e.message);
+            console.error(`[OpenAI Processor] ❌ Failed to process page ${i + 1}:`, e.message);
+            // Continue to next page - Do not throw!
         }
     }
 

@@ -90,8 +90,9 @@ export async function extractMappingLogic(sampleInput: any, fileType: string, fi
     if (Array.isArray(sampleInput)) {
         sampleData = sampleInput;
     } else if (typeof sampleInput === 'string') {
-        rawTextSample = sampleInput.substring(0, 15000); // 15k char sample
-        sampleData = rawTextSample.split('\n').filter(l => l.trim().length > 0).slice(0, 50); // 50 lines
+        rawTextSample = sampleInput.substring(0, 25000); // Increased to 25k for better global context
+        // Ensure we have enough lines for line-based sampling if needed
+        sampleData = rawTextSample.split('\n').filter(l => l.trim().length > 0).slice(0, 100);
     }
 
     // Step 1: Detect Signature
@@ -287,25 +288,30 @@ SAMPLE RAW TEXT:
 ${rawTextSample.substring(0, 4000)}
 
 CHALLENGE:
-The text might be "smashed" together (missing spaces between columns) or have irregular spacing due to PDF extraction.
-Example of smashed text: "USV1001James Williams42Male" -> ID:USV1001, Name:James Williams, Age:42, Gender:Male.
+The text might be "smashed" together (missing spaces between columns) or have irregular spacing due to PDF extraction (e.g. "USV1001James Williams42Male").
+It might also be a "Stream" of text where columns are read top-to-bottom instead of left-to-right.
 
 INSTRUCTIONS:
-1. Analyze the text patterns. Look for fixed widths, specific anchors (like State codes "NY", "CA"), or repeating patterns.
-2. Write a Javascript function \`parseText(fullText)\` that:
-   - Takes the entire text string as input.
-   - Returns an **Array of Objects**.
-   - Handles the specific formatting quirks (smashed columns, etc.).
+1. **PATTERN RECOGNITION**: 
+   - Look for repeating patterns (e.g. dates \d{2}/\d{2}/\d{4}, state codes like "RI", "NY").
+   - Determine if the text is Row-Oriented (standard) or Column-Oriented (stream).
+   - Identify distinct separators (tabs, multiple spaces, specific keywords).
+
+2. **WRITE PARSING LOGIC**:
+   - Write a Javascript function \`parseText(fullText)\` that takes the full string.
+   - It MUST return an **Array of Objects**.
+   - Use flexible Regex or string manipulation.
+   - **HANDLE SMASHED TEXT**: Use Regex lookaheads/lookbehinds or specific field patterns (e.g. \d{5} for Zip) to splitting strings if no spaces exist.
+
 3. **REGEX SAFETY**:
    - Use ONLY standard flags (g, i, m).
    - **MUST ESCAPE SLASHES** in regex literals (e.g. \\d{2}\\/\\d{2}).
-   - Prefer \`new RegExp()\` if complex.
-   - CONDITIONAL LOGIC: If a line is a header (e.g. "Voter ID..."), skip it.
+   - Prefer \`new RegExp()\` constructors for complex patterns to avoid syntax errors.
 
 RETURN JSON:
 {
   "type": "parsing_function",
-  "parseFunction": "function(text) { const lines = text.split('\\n'); ... return results; }"
+  "parseFunction": "function(text) { ...your code here... return results; }"
 }`;
 
             tracker.startStep('LLM Logic Extraction (Text)');
