@@ -1,4 +1,6 @@
 import { setupWorker } from './queue/worker';
+import { setupCommitWorker } from './queue/commitWorker';
+
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 
@@ -13,6 +15,7 @@ mongoose.connect(mongoUri)
         console.log('MongoDB Connected for Worker');
         console.log('Worker Script Initializing...');
         setupWorker();
+        setupCommitWorker();
     })
     .catch((err) => {
         console.error('MongoDB Connection Error:', err);

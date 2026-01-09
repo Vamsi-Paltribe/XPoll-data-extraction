@@ -16,9 +16,8 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks: {
-          'pdf-lib': ['pdfjs-dist'],
           'ocr-lib': ['tesseract.js'],
-          'data-utils': ['xlsx', 'papaparse'],
+          'data-utils': ['xlsx'],
           'vendor': ['react', 'react-dom', 'react-router-dom', '@tanstack/react-query'],
         }
       }

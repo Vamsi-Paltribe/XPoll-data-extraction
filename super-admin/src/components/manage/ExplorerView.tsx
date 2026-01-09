@@ -81,13 +81,6 @@ const ExplorerView: React.FC<ExplorerViewProps> = React.memo(({
         setExplorerQuery(inputValue);
         setPendingResponse(true);
 
-        // Use timeout to allow state prop to propagate if needed, though usually handleExplorerQuery captures current closure? 
-        // Actually, if handleExplorerQuery relies on the prop 'explorerQuery' in the parent, we need to wait for the parent to update.
-        // But since 'setExplorerQuery' updates parent state, we can't guarantee synchronous update.
-        // Ideally handleExplorerQuery should accept an arg. Assuming it doesn't, we update logic:
-        // We will call setExplorerQuery, and trust the parent re-renders and we can click the button? 
-        // No, we need to trigger it.
-        // Let's assume handleExplorerQuery reads the *latest* state. 
         setTimeout(() => {
             handleExplorerQuery();
         }, 100);

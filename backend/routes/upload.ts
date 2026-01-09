@@ -7,6 +7,7 @@ import { extractMappingLogic, applyLogicToDataset } from '../services/logicExtra
 import { ParsingTemplate } from '../models/ParsingTemplate';
 import { CustomerRecord } from '../models/CustomerRecord';
 import { Bucket } from '../models/Bucket';
+import { commitQueue } from '../queue/commitQueue';
 
 const router = express.Router();
 
@@ -353,6 +354,36 @@ router.post('/upload-document/commit', auth, adminOnly, async (req: AuthRequest,
             return res.status(400).json({ error: 'Invalid data format' });
         }
 
+        // Calculate total records to decide strategy
+        let totalRecords = 0;
+        Object.values(extractedData).forEach((arr: any) => {
+            if (Array.isArray(arr)) totalRecords += arr.length;
+        });
+
+        const ASYNC_THRESHOLD = 500; // Records
+
+        // ASYNC PATH (Queue)
+        if (totalRecords > ASYNC_THRESHOLD) {
+            console.log(`[Upload Commit] 🚀 Large payload (${totalRecords} records). Offloading to Queue.`);
+
+            const job = await commitQueue.add('commit-job', {
+                userId: req.user.id,
+                extractedData,
+                saveAsTemplate,
+                templateName,
+                logic,
+                signature
+            });
+
+            return res.json({
+                success: true,
+                async: true, // Frontend should recognize this
+                jobId: job.id,
+                message: `Processing ${totalRecords} records in background. You will be notified when complete.`
+            });
+        }
+
+        // SYNC PATH (Direct)
         const result = await commitDataToRegistry({
             userId: req.user.id,
             extractedData,

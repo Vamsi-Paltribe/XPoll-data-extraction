@@ -3,20 +3,14 @@ import { MessageSquare, Upload, Search, Loader2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useSearchParams } from 'react-router-dom';
-import * as pdfjsLib from 'pdfjs-dist';
 import { ChatMessage, PreviewData } from '../components/manage/types';
+import * as XLSX from 'xlsx';
 
 // Lazy Load Components
 const AIChatView = lazy(() => import('../components/manage/AIChatView'));
 const JobBinView = lazy(() => import('../components/manage/JobBinView'));
 const ExplorerView = lazy(() => import('../components/manage/ExplorerView'));
 const PreviewModal = lazy(() => import('../components/manage/PreviewModal'));
-
-// @ts-ignore
-import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
-
-// Assign the worker source
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 
 const ManageData = () => {
@@ -26,7 +20,7 @@ const ManageData = () => {
     const [chatHistory, setChatHistory] = useState<ChatMessage[]>([
         { type: 'system', content: 'Hello! I am your Data Assistant. Drag & drop a file (PDF, CSV, Excel, Image) or type instructions to get started.' }
     ]);
-    const [stagedFile, setStagedFile] = useState<File | null>(null);
+    const [stagedFiles, setStagedFiles] = useState<File[]>([]);
 
     // Processing State
     const [previewData, setPreviewData] = useState<PreviewData | null>(null);
@@ -63,8 +57,9 @@ const ManageData = () => {
     }, [explorerQuery, setIsExploring, setError, setExplorerData]);
 
     const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files?.[0]) {
-            setStagedFile(e.target.files[0]);
+        if (e.target.files) {
+            const newFiles = Array.from(e.target.files);
+            setStagedFiles(prev => [...prev, ...newFiles]);
         }
     }, []);
 
@@ -140,11 +135,135 @@ const ManageData = () => {
         await fetchJobPage(previewData.jobId, newPage, { confidence: previewData.tier === 1 ? 0.9 : 0.5 });
     }, [previewData?.jobId, previewData?.tier, fetchJobPage, setPreviewData]);
 
+    // Helper: Read file content as text
+    const readFileText = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = (e) => reject(e);
+            reader.readAsText(file);
+        });
+    };
+
+    // Helper: Execute Logic Client-Side
+    const executeClientSideLogic = async (text: string, logic: any) => {
+        if (logic.type === 'parsing_function' && logic.parseFunction) {
+            // eslint-disable-next-line
+            const parseFunc = new Function('return ' + logic.parseFunction)();
+            return parseFunc(text);
+        }
+        return null;
+    };
+
     const processFile = async (file: File) => {
-        const processingMsg: ChatMessage = { type: 'system', isProcessing: true, content: `Uploading & Processing ${file.name}...` };
+        const processingMsg: ChatMessage = {
+            type: 'system',
+            isProcessing: true,
+            content: `Analyzing ${file.name} for extraction patterns (Scenario A)...`
+        };
         setChatHistory(prev => [...prev, processingMsg]);
 
         try {
+            // SCENARIO A: Try Client-Side Extraction (Fast Lane)
+            let rawText = "";
+            let fileType = 'text';
+
+            if (file.type === 'application/pdf') {
+                const pdfRes = await api.post('/admin/extract-logic', {
+                    sampleData: file,
+                    fileType,
+                    fileName: file.name
+                });
+                rawText = pdfRes.data.logic;
+            } else if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data);
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+                const logicRes = await api.post('/admin/extract-logic', {
+                    sampleData: jsonData.slice(0, 100), // Send first 100 rows as sample
+                    fileType: file.name.endsWith('.csv') ? 'csv' : 'excel',
+                    fileName: file.name
+                });
+
+                if (logicRes.data.success && logicRes.data.logic) {
+                    const logic = logicRes.data.logic;
+                    setChatHistory(prev => [...prev.filter(m => !m.isProcessing), {
+                        type: 'system', content: `${file.name.endsWith('.csv') ? 'CSV' : 'Excel'} pattern found! Executing locally...`
+                    }]);
+
+                    const extractedData = XLSX.utils.sheet_to_json(firstSheet);
+
+                    const uploadRes = await api.post('/upload-document/preview', {
+                        fullData: extractedData,
+                        logic: logic,
+                        fileName: file.name
+                    });
+
+                    if (uploadRes.data.success) {
+                        setPreviewData(uploadRes.data);
+                        setChatHistory(prev => [...prev, {
+                            type: 'system',
+                            isSuccess: true,
+                            content: `✅ Success: Processed ${extractedData.length} ${file.name.endsWith('.csv') ? 'CSV' : 'Excel'} records!`
+                        }]);
+                        return;
+                    }
+                }
+            } else if (file.name.endsWith('.txt')) {
+                rawText = await readFileText(file);
+                fileType = 'text';
+            }
+
+            // 1. Attempt Logic Extraction via API (if text based)
+            let logic = null;
+            if (rawText && rawText.length > 0) {
+                const sample = rawText.substring(0, 5000);
+                const logicRes = await api.post('/admin/extract-logic', {
+                    sampleData: sample,
+                    fileType,
+                    fileName: file.name
+                });
+
+                if (logicRes.data.success && logicRes.data.logic) {
+                    logic = logicRes.data.logic;
+
+                    // 2. Execute Locally (Scenario A Execution)
+                    setChatHistory(prev => [...prev.filter(m => !m.isProcessing), {
+                        type: 'system', content: "Pattern found! Executing locally (0 upload wait)..."
+                    }]);
+
+                    const extractedData = await executeClientSideLogic(rawText, logic);
+
+                    if (extractedData && Array.isArray(extractedData) && extractedData.length > 0) {
+                        // 3. Upload Clean Data (Hybrid Mode)
+                        const uploadRes = await api.post('/upload-document/preview', {
+                            fullData: extractedData,
+                            logic: logic,
+                            fileName: file.name
+                        });
+
+                        if (uploadRes.data.success) {
+                            setPreviewData(uploadRes.data);
+                            setChatHistory(prev => [...prev, {
+                                type: 'system',
+                                isSuccess: true,
+                                content: `✅ Scenario A Success: Processed ${extractedData.length} records locally!`
+                            }]);
+                            return; // DONE!
+                        }
+                    }
+                }
+            }
+
+            // SCENARIO B: Fallback to Backend Processing (Slow Lane)
+            console.log("Scenario A skipped or failed. Falling back to Backend Upload.");
+            setChatHistory(prev => prev.map(m => m.isProcessing ? {
+                ...m,
+                content: `Local extraction failed or skipped. Uploading to Server for Deep Analysis (Scenario B)...`
+            } : m));
+
             const formData = new FormData();
             formData.append('file', file);
 
@@ -157,7 +276,7 @@ const ManageData = () => {
                     const filtered = prev.filter(m => !m.isProcessing);
                     const successMsg: ChatMessage = {
                         type: 'system',
-                        content: `Successfully uploaded ${file.name}.\n\nURL: ${res.data.url} \n\nIt has been queued for processing.\nCheck backend logs for worker output.`,
+                        content: `Successfully uploaded. Server is processing (Scenario B: Page-by-Page Fallback enabled). check Bin tab.`,
                         isSuccess: true
                     };
                     return [...filtered, successMsg];
@@ -177,27 +296,29 @@ const ManageData = () => {
     };
 
     const handleSendMessage = useCallback(async () => {
-        if (!inputValue.trim() && !stagedFile) return;
+        if (!inputValue.trim() && stagedFiles.length === 0) return;
 
         const userMsg: ChatMessage = {
             type: 'user',
             content: inputValue,
-            file: stagedFile ? { name: stagedFile.name, size: stagedFile.size } : null
+            files: stagedFiles.map(f => ({ name: f.name, size: f.size }))
         };
         setChatHistory(prev => [...prev, userMsg]);
 
-        const currentFile = stagedFile;
+        const filesToProcess = [...stagedFiles];
         setInputValue('');
-        setStagedFile(null);
+        setStagedFiles([]);
 
-        if (currentFile) {
-            await processFile(currentFile);
-        } else {
+        if (filesToProcess.length > 0) {
+            for (const file of filesToProcess) {
+                await processFile(file);
+            }
+        } else if (inputValue.trim()) {
             setTimeout(() => {
                 setChatHistory(prev => [...prev, { type: 'system', content: "I see your message, but I currently only process files. Please attach a document!" }]);
             }, 500);
         }
-    }, [inputValue, stagedFile, setChatHistory, setInputValue, setStagedFile, processFile]);
+    }, [inputValue, stagedFiles, setChatHistory, setInputValue, setStagedFiles, processFile]);
 
     const handleApplyFallback = useCallback(() => {
         if (!previewData || !previewData.preview['Unknown']) return;
@@ -278,8 +399,8 @@ const ManageData = () => {
                             inputValue={inputValue}
                             setInputValue={setInputValue}
                             handleSendMessage={handleSendMessage}
-                            stagedFile={stagedFile}
-                            setStagedFile={setStagedFile}
+                            stagedFiles={stagedFiles}
+                            setStagedFiles={setStagedFiles}
                             handleFileSelect={handleFileSelect}
                             setPreviewData={setPreviewData}
                             previewData={previewData}

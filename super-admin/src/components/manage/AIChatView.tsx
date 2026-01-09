@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { Upload, MessageSquare, FileText, Loader2, LayoutTemplate, Paperclip, XCircle, Send, Database } from 'lucide-react';
 import { ChatMessage, PreviewData } from './types';
 
@@ -7,8 +7,8 @@ interface AIChatViewProps {
     inputValue: string;
     setInputValue: (value: string) => void;
     handleSendMessage: () => void;
-    stagedFile: File | null;
-    setStagedFile: (file: File | null) => void;
+    stagedFiles: File[];
+    setStagedFiles: React.Dispatch<React.SetStateAction<File[]>>;
     handleFileSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     setPreviewData: (data: PreviewData | null) => void;
     previewData: PreviewData | null;
@@ -19,28 +19,65 @@ const AIChatView: React.FC<AIChatViewProps> = React.memo(({
     inputValue,
     setInputValue,
     handleSendMessage,
-    stagedFile,
-    setStagedFile,
+    stagedFiles,
+    setStagedFiles,
     handleFileSelect,
     setPreviewData,
     previewData
 }) => {
-    const chatEndRef = useRef<HTMLDivElement>(null);
+    const [isDragging, setIsDragging] = React.useState(false);
 
-    // Scroll to bottom on new message
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [chatHistory]);
+    const handleDragOver = React.useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    }, []);
 
+    const handleDragLeave = React.useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    }, []);
+
+    const handleDrop = React.useCallback((e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+
+        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            const newFiles = Array.from(e.dataTransfer.files);
+            setStagedFiles(prev => [...prev, ...newFiles]);
+        }
+    }, [setStagedFiles]);
+
+    const removeFile = (index: number) => {
+        setStagedFiles(prev => prev.filter((_, i) => i !== index));
+    };
     return (
-        <div className="flex flex-col relative bg-slate-50 overflow-hidden h-full">
+        <div
+            className={`flex flex-col relative bg-slate-50 overflow-hidden h-full transition-colors duration-300 ${isDragging ? 'bg-purple-50/50' : ''}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
             {/* Ambient Background Effects */}
             <div className="absolute top-10 right-0 w-[500px] h-[500px] bg-purple-200/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2 pointer-events-none" />
             <div className="absolute bottom-10 left-0 w-[500px] h-[500px] bg-blue-200/20 rounded-full blur-[100px] translate-y-1/2 -translate-x-1/2 pointer-events-none" />
 
+            {/* DRAG AND DROP OVERLAY */}
+            {isDragging && (
+                <div className="absolute inset-0 z-50 bg-purple-600/10 backdrop-blur-md border-4 border-dashed border-purple-400 rounded-3xl m-4 flex flex-col items-center justify-center pointer-events-none animate-in fade-in zoom-in-95 duration-300">
+                    <div className="w-20 h-20 bg-white rounded-3xl shadow-2xl flex items-center justify-center mb-4">
+                        <Upload className="w-10 h-10 text-purple-600 animate-bounce" />
+                    </div>
+                    <p className="text-2xl font-bold text-purple-700">Drop files here to extract</p>
+                    <p className="text-purple-500 font-medium mt-2">Release and we'll start analyzing</p>
+                </div>
+            )}
+
             {/* Messages Area - Centered Column */}
             <div className="flex-1 overflow-y-auto w-full scroll-smooth z-10 custom-scrollbar">
-                <div className="max-w-3xl mx-auto px-6 pb-[6rem] flex flex-col ">
+                <div className="max-w-3xl mx-auto px-6 flex flex-col pb-48">
 
                     {/* EMPTY STATE HERO */}
                     {chatHistory.length <= 1 ? (
@@ -84,7 +121,7 @@ const AIChatView: React.FC<AIChatViewProps> = React.memo(({
                         </div>
                     ) : (
                         // CHAT HISTORY
-                        <div className='h-[65dvh] space-y-4 pt-4'>
+                        <div className='space-y-6 pt-4'>
                             {chatHistory.map((msg, idx) => (
                                 <div key={idx} className={`flex gap-5 ${msg.type === 'user' ? 'flex-row-reverse' : 'flex-row'} animate-in fade-in slide-in-from-bottom-4 duration-500`}>
 
@@ -103,15 +140,19 @@ const AIChatView: React.FC<AIChatViewProps> = React.memo(({
                                             ? 'bg-red-50/50 border-red-100 text-red-900 rounded-tl-sm backdrop-blur-sm'
                                             : 'bg-white/60 border-white/60 backdrop-blur-md text-slate-800 rounded-tl-sm shadow-xl shadow-slate-200/20'
                                         }`}>
-                                        {msg.file && (
-                                            <div className="flex items-center gap-3 mb-4 p-3 bg-white/50 rounded-2xl border border-white/50 shadow-sm group hover:bg-white/80 transition-colors">
-                                                <div className="w-10 h-10 bg-gradient-to-br from-purple-50 to-white rounded-xl flex items-center justify-center shadow-sm text-purple-600 border border-purple-50">
-                                                    <FileText className="w-5 h-5" />
-                                                </div>
-                                                <div className="flex-1 min-w-0 pr-2">
-                                                    <p className="font-bold text-sm text-slate-900 truncate">{msg.file.name}</p>
-                                                    <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{(msg.file.size / 1024).toFixed(1)} KB</p>
-                                                </div>
+                                        {msg.files && msg.files.length > 0 && (
+                                            <div className="flex flex-col gap-2 mb-4">
+                                                {msg.files.map((file, fIdx) => (
+                                                    <div key={fIdx} className="flex items-center gap-3 p-3 bg-white/50 rounded-2xl border border-white/50 shadow-sm group hover:bg-white/80 transition-colors">
+                                                        <div className="w-10 h-10 bg-gradient-to-br from-purple-50 to-white rounded-xl flex items-center justify-center shadow-sm text-purple-600 border border-purple-50">
+                                                            <FileText className="w-5 h-5" />
+                                                        </div>
+                                                        <div className="flex-1 min-w-0 pr-2">
+                                                            <p className="font-bold text-sm text-slate-900 truncate">{file.name}</p>
+                                                            <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">{(file.size / 1024).toFixed(1)} KB</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
 
@@ -141,7 +182,6 @@ const AIChatView: React.FC<AIChatViewProps> = React.memo(({
                                     </div>
                                 </div>
                             ))}
-                            <div ref={chatEndRef} className="w-full shrink-0" />
                         </div>
                     )}
                 </div>
@@ -157,30 +197,32 @@ const AIChatView: React.FC<AIChatViewProps> = React.memo(({
                             : 'min-h-[60px]' // Standard Mode: Compact
                             } ${inputValue.length > 50 ? 'rounded-[28px]' : ''}`}>
 
-                            {/* File Preview (Floating above) */}
-                            {stagedFile && (
-                                <div className="absolute bottom-full left-0 mb-4 ml-2 animate-in slide-in-from-bottom-2 zoom-in-95 fade-in duration-300">
-                                    <div className="bg-white/80 backdrop-blur-xl p-3 pr-10 rounded-2xl shadow-xl shadow-purple-900/5 border border-white/80 flex items-center gap-3 relative ring-1 ring-black/5">
-                                        <div className="w-10 h-10 bg-gradient-to-br from-purple-50 to-blue-50 text-purple-600 rounded-xl flex items-center justify-center border border-white shadow-sm">
-                                            <FileText className="w-5 h-5" />
+                            {/* File Previews (Scrollable Horizontal List) */}
+                            {stagedFiles.length > 0 && (
+                                <div className="absolute bottom-full left-0 mb-4 ml-2 flex gap-2 overflow-x-auto max-w-full pb-2 animate-in slide-in-from-bottom-2 zoom-in-95 fade-in duration-300">
+                                    {stagedFiles.map((file, idx) => (
+                                        <div key={idx} className="bg-white/80 backdrop-blur-xl p-3 pr-10 rounded-2xl shadow-xl shadow-purple-900/5 border border-white/80 flex items-center gap-3 relative ring-1 ring-black/5 shrink-0">
+                                            <div className="w-10 h-10 bg-gradient-to-br from-purple-50 to-blue-50 text-purple-600 rounded-xl flex items-center justify-center border border-white shadow-sm">
+                                                <FileText className="w-5 h-5" />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-900 max-w-[120px] truncate">{file.name}</p>
+                                                <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider">Ready</p>
+                                            </div>
+                                            <button
+                                                onClick={() => removeFile(idx)}
+                                                className="absolute right-2 top-2 p-1 hover:bg-slate-100 rounded-full transition-colors"
+                                            >
+                                                <XCircle className="w-4 h-4 text-slate-300 hover:text-slate-500" />
+                                            </button>
                                         </div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-900 max-w-[150px] truncate">{stagedFile.name}</p>
-                                            <p className="text-[10px] text-purple-600 font-bold uppercase tracking-wider">Ready</p>
-                                        </div>
-                                        <button
-                                            onClick={() => setStagedFile(null)}
-                                            className="absolute right-2 top-2 p-1 hover:bg-slate-100 rounded-full transition-colors"
-                                        >
-                                            <XCircle className="w-4 h-4 text-slate-300 hover:text-slate-500" />
-                                        </button>
-                                    </div>
+                                    ))}
                                 </div>
                             )}
 
                             {/* Paperclip Button */}
                             <label className="p-3 text-slate-400 hover:text-purple-600 hover:bg-purple-50/50 rounded-full cursor-pointer transition-all shrink-0 active:scale-95 mb-0.5">
-                                <input type="file" className="hidden" id="file-upload-hidden" onChange={handleFileSelect} />
+                                <input type="file" multiple className="hidden" id="file-upload-hidden" onChange={handleFileSelect} />
                                 <Paperclip className="w-6 h-6" />
                             </label>
 
@@ -203,8 +245,8 @@ const AIChatView: React.FC<AIChatViewProps> = React.memo(({
                             {/* Send Button */}
                             <button
                                 onClick={handleSendMessage}
-                                disabled={!inputValue.trim() && !stagedFile}
-                                className={`p-3.5 rounded-full transition-all duration-300 shrink-0 mb-0.5 ${inputValue.trim() || stagedFile
+                                disabled={!inputValue.trim() && stagedFiles.length === 0}
+                                className={`p-3.5 rounded-full transition-all duration-300 shrink-0 mb-0.5 ${inputValue.trim() || stagedFiles.length > 0
                                     ? 'bg-slate-900 text-white shadow-lg shadow-slate-900/20 hover:bg-black hover:scale-105 active:scale-95'
                                     : 'bg-slate-100 text-slate-300 cursor-not-allowed'
                                     }`}

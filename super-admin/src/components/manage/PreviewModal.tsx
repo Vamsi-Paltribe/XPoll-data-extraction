@@ -41,7 +41,14 @@ const PreviewModal: React.FC<PreviewModalProps> = ({
                 await api.post(`/jobs/${previewData.jobId}/reject`);
                 setPreviewData(null);
                 if (refetchJobs) refetchJobs();
-            } catch (err) {
+            } catch (err: any) {
+                const errorMessage = err.response?.data?.error;
+                if (errorMessage === "Job status is rejected, cannot reject.") {
+                    alert(errorMessage); // Show message as requested
+                    setPreviewData(null); // Close modal
+                    if (refetchJobs) refetchJobs(); // Refresh state
+                    return;
+                }
                 console.error("Failed to reject job", err);
                 setError("Failed to reject job");
             } finally {

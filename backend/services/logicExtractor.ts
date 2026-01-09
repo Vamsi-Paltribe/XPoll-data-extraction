@@ -195,6 +195,7 @@ INSTRUCTIONS:
 2. Write a Javascript function named \`parseRecord\` that takes a single string input and returns a JSON object.
 3. **CRITICAL: CONDITIONAL LOGIC**: If different lines have different structures, use if/else logic to detect and parse them accordingly.
 4. **SKIP INVALID ROWS**: If a row does not look like valid data (e.g. a page header), return \`null\`.
+5. **MISSING DATA**: If a field (like State, Zip, etc.) is not present in the content, return an empty string (\"\"). **NEVER** return comments or explanations like \"// State not provided\".
 5. **IMPORTANT: REGEX SYNTAX**:
    - Use ONLY standard flags (g, i, m).
    - **MUST ESCAPE SLASHES**: If using regex literals (e.g. /pattern/), you MUST escape forward slashes (e.g. use \\/ for dates like \\d{2}\\/\\d{2}). Unescaped slashes will cause syntax errors.
@@ -203,7 +204,8 @@ INSTRUCTIONS:
 RETURN JSON:
 {
   "type": "parsing_function",
-  "parseFunction": "function(text) { ... if (!match) return null; ... return { ... }; }"
+  "parseFunction": "function(text) { ... if (!match) return null; ... return { ... }; }",
+  "instructions": "Ensure values for fields not found in the input are returned as empty strings (\"\") or null, NOT comments or explanations."
 }`;
             } else {
                 prompt = `Map these fields to the TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer.
@@ -302,6 +304,8 @@ INSTRUCTIONS:
    - It MUST return an **Array of Objects**.
    - Use flexible Regex or string manipulation.
    - **HANDLE SMASHED TEXT**: Use Regex lookaheads/lookbehinds or specific field patterns (e.g. \d{5} for Zip) to splitting strings if no spaces exist.
+   - 4. **MISSING DATA**: If a field (like State, Zip, etc.) is not present in the content, return an empty string (\"\"). **NEVER** return comments or explanations like \"// State not provided\".
+   - 5. **CONSISTENCY**: Ensure the returned object consistently has the keys: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer. Use \"\" for missing ones.
 
 3. **REGEX SAFETY**:
    - Use ONLY standard flags (g, i, m).

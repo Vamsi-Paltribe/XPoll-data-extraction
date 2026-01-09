@@ -1,7 +1,7 @@
 export interface ChatMessage {
     type: 'system' | 'user';
     content: string;
-    file?: { name: string; size: number } | null;
+    files?: { name: string; size: number }[] | null;
     isProcessing?: boolean;
     isError?: boolean;
     isSuccess?: boolean;
