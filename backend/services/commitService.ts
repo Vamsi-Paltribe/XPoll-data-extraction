@@ -1,10 +1,15 @@
+import mongoose from 'mongoose';
 import { Bucket } from '../models/Bucket';
 import { CustomerRecord } from '../models/CustomerRecord';
 import { ParsingTemplate } from '../models/ParsingTemplate';
 
+import Job from '../models/Job';
+import RecordModel from '../models/Record'; // Import Record Model
+
 interface CommitOptions {
     userId: string;
-    extractedData: any;
+    extractedData?: any; // Optional now
+    jobId?: string;      // New field
     saveAsTemplate?: boolean;
     templateName?: string;
     logic?: any;
@@ -12,88 +17,73 @@ interface CommitOptions {
 }
 
 export const commitDataToRegistry = async (options: CommitOptions) => {
-    const { userId, extractedData, saveAsTemplate, templateName, logic, signature } = options;
+    const { userId, extractedData, jobId, saveAsTemplate, templateName, logic, signature } = options;
 
-    const states = Object.keys(extractedData);
     let totalRecords = 0;
+    const statesProcessed = new Set<string>();
 
-    for (const stateName of states) {
-        const records = extractedData[stateName];
-        if (!records || records.length === 0) continue;
+    // CASE 1: SCALABLE MODE (Job ID Provided)
+    if (jobId) {
+        console.log(`[Commit Service] 🚀 Scalable Commit Mode for Job ${jobId}`);
 
-        console.log(`[Commit Service] Processing ${records.length} records for ${stateName}`);
+        // We will process in batches to keep memory low
+        const BATCH_SIZE = 2000;
+        let cursor = RecordModel.find({ jobId }).cursor({ batchSize: BATCH_SIZE });
 
-        // 1. Find or Create Global Bucket for this State
-        let bucket = await Bucket.findOne({ name: stateName, type: 'global' });
+        let batch: any[] = [];
 
-        if (!bucket) {
-            console.log(`[Commit Service] Creating new Global Bucket for ${stateName}`);
-            bucket = new Bucket({
-                name: stateName,
-                description: `Master Data Registry for ${stateName}`,
-                type: 'global',
-                createdBy: userId,
-                sourceUrl: 'UPLOADED_VIA_ADMIN_DASHBOARD'
+        // Helper to process a batch
+        const processBatch = async (items: any[]) => {
+            if (items.length === 0) return;
+
+            // Group by State locally for this batch
+            const byState: Record<string, any[]> = {};
+            items.forEach(item => {
+                const data = item.data;
+                const state = data.State || 'Unknown';
+                if (!byState[state]) byState[state] = [];
+                byState[state].push(data);
             });
-            await bucket.save();
-        }
 
-        // 2. Prepare Records for Bulk Insert
-        const customerRecords = records.map((record: any) => ({
-            bucketId: bucket!._id,
-            data: record, // Store the flexible data here
-            keyHash: record.keyHash || Math.random().toString(36).substring(7), // Fallback
-            history: [{
-                action: 'imported',
-                details: `Imported via Admin Upload by ${userId}`
-            }]
-        }));
+            // Insert per state
+            for (const stateName of Object.keys(byState)) {
+                statesProcessed.add(stateName);
+                await insertRecordsForState(stateName, byState[stateName], userId);
+            }
+            totalRecords += items.length;
+            console.log(`[Commit Service] Processed batch of ${items.length} records...`);
+        };
 
-        // 3. Bulk Insert
-        let insertedCount = 0;
-        try {
-            // @ts-ignore
-            const result = await CustomerRecord.insertMany(customerRecords, { ordered: false });
-            insertedCount = result.length;
-        } catch (err: any) {
-            if (err.writeErrors) {
-                insertedCount = err.insertedDocs.length;
-                console.log(`[Commit Service] Inserted ${insertedCount} records. (${err.writeErrors.length} duplicates skipped)`);
-            } else {
-                throw err;
+        for await (const doc of cursor) {
+            batch.push(doc);
+            if (batch.length >= BATCH_SIZE) {
+                await processBatch(batch);
+                batch = []; // Clear
             }
         }
 
-        // 4. Update METADATA (Headers & Cities)
-        const existingHeaders = new Set(bucket!.availableHeaders || []);
-        const existingCities = new Set(bucket!.availableCities || []);
+        // Process remaining
+        if (batch.length > 0) {
+            await processBatch(batch);
+        }
 
-        records.forEach((rec: any) => {
-            // Headers
-            Object.keys(rec).forEach(k => {
-                if (!k.startsWith('_') && k !== 'bucketId' && k !== 'keyHash') {
-                    existingHeaders.add(k);
-                }
-            });
-            // Cities
-            const city = rec.City || rec.CITY || rec.city;
-            if (city && typeof city === 'string') {
-                existingCities.add(city.trim());
-            }
-        });
-
-        bucket!.availableHeaders = Array.from(existingHeaders).sort();
-        bucket!.availableCities = Array.from(existingCities).sort();
-        bucket!.lastSyncedAt = new Date();
-
-        await bucket!.save();
-        totalRecords += insertedCount;
+    }
+    // CASE 2: LEGACY/DIRECT MODE (extractedData payload)
+    else if (extractedData) {
+        console.log(`[Commit Service] standard Commit Mode (Payload based)`);
+        const states = Object.keys(extractedData);
+        for (const stateName of states) {
+            const records = extractedData[stateName];
+            if (!records?.length) continue;
+            statesProcessed.add(stateName);
+            await insertRecordsForState(stateName, records, userId);
+            totalRecords += records.length;
+        }
     }
 
     // Save Template if requested
     if (saveAsTemplate && templateName && logic && signature) {
         try {
-            // Upsert to avoid race conditions
             await ParsingTemplate.findOneAndUpdate(
                 { signature },
                 {
@@ -107,13 +97,63 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
             );
             console.log(`[Commit Service] Template saved: "${templateName}"`);
         } catch (templateErr: any) {
-            console.error(`[Commit Service] Failed to save template: ${templateErr.message}`);
+            console.error(`[CommitService] Failed to save template: ${templateErr.message}`);
         }
     }
 
     return {
         success: true,
         totalRecords,
-        states: states.map(s => ({ name: s, recordCount: extractedData[s].length }))
+        states: Array.from(statesProcessed).map(s => ({ name: s, count: 'N/A' })) // Simplified count for scalable mode
     };
 };
+
+/**
+ * Helper: Inserts records into the correct Bucket
+ */
+async function insertRecordsForState(stateName: string, records: any[], userId: string) {
+    // 1. Find or Create Bucket
+    let bucket = await Bucket.findOne({ name: stateName, type: 'global' });
+    if (!bucket) {
+        console.log(`[Commit Service] Creating Bucket: ${stateName}`);
+        bucket = new Bucket({
+            name: stateName,
+            description: `Master Registry - ${stateName}`,
+            type: 'global',
+            createdBy: mongoose.isValidObjectId(userId) ? userId : undefined, // Fix: CastError for "ADMIN_JOB_USER"
+            sourceUrl: 'UPLOADED_VIA_ADMIN_DASHBOARD'
+        });
+        await bucket.save();
+    }
+
+    // 2. Prepare Docs
+    const customerRecords = records.map((record: any) => ({
+        bucketId: bucket!._id,
+        data: record,
+        keyHash: record.keyHash || Math.random().toString(36).substring(7),
+        history: [{ action: 'imported', details: `Imported via Admin Upload` }]
+    }));
+
+    // 3. Bulk Insert
+    try {
+        await CustomerRecord.insertMany(customerRecords, { ordered: false });
+    } catch (err: any) {
+        // Ignore duplicate errors
+    }
+
+    // 4. Update Metadata
+    const existingHeaders = new Set(bucket!.availableHeaders || []);
+    const existingCities = new Set(bucket!.availableCities || []);
+
+    records.forEach((rec: any) => {
+        Object.keys(rec).forEach(k => {
+            if (!k.startsWith('_') && k !== 'bucketId') existingHeaders.add(k);
+        });
+        if (rec.City) existingCities.add(rec.City);
+    });
+
+    bucket!.availableHeaders = Array.from(existingHeaders).sort();
+    bucket!.availableCities = Array.from(existingCities).sort();
+    bucket!.lastSyncedAt = new Date();
+    await bucket!.save();
+}

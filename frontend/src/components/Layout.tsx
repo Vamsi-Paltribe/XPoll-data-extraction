@@ -1,57 +1,43 @@
-import React from 'react';
+import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
 import api from '../services/api';
 import {
-    LayoutDashboard,
     LogOut,
-    Circle,
     Database,
     LayoutGrid,
     Wallet,
-    Cpu,
     Coins
 } from 'lucide-react';
 
 import { useQuery } from '@tanstack/react-query';
+import NotificationBar from './NotificationBar';
 
-const NavItem = ({ to, label, icon: Icon }) => {
-    const location = useLocation();
-    const isActive = location.pathname === to || (to !== '/' && location.pathname.startsWith(to));
+interface LayoutProps {
+    children: ReactNode;
+}
 
-    return (
-        <Link to={to} className={clsx(
-            "flex items-center gap-2 px-4 py-2 rounded-lg transition-all duration-200 group relative",
-            isActive
-                ? "text-slate-900"
-                : "text-slate-500 hover:text-slate-900"
-        )}>
-            <div className={clsx(
-                "transition-all",
-                isActive ? "text-slate-900" : "text-slate-400 group-hover:text-slate-600"
-            )}>
-                {Icon && <Icon className="w-4 h-4" />}
-            </div>
-            <span className="font-bold text-[11px] uppercase tracking-wider">{label}</span>
-            {isActive && <div className="absolute inset-x-4 bottom-[-14px] h-[2px] bg-slate-900" />}
-        </Link>
-    );
-};
-
-const Layout = ({ children }) => {
+const Layout = ({ children }: LayoutProps) => {
     const { data: user } = useQuery({
         queryKey: ['user-me'],
         queryFn: async () => {
             const res = await api.get('/auth/me');
-            return res.data;
+            return res.data as { tokens: number };
         }
     });
 
+    const location = useLocation();
+    const isDashboard = location.pathname === '/';
+    const isLedger = location.pathname.startsWith('/ledger');
+
     return (
         <div className="flex flex-col min-h-screen bg-background text-slate-900 font-sans">
+            {/* Notification Bar */}
+            <NotificationBar />
+
             {/* Top Navbar */}
             <header className="h-20 bg-white border-b border-slate-200 flex items-center px-12 sticky top-0 z-50">
-                <div className="max-w-[1700px] mx-auto w-full flex items-center justify-between">
+                <div className="max-w-full mx-auto w-full flex items-center justify-between">
                     <div className="flex items-center gap-10">
                         <Link to="/" className="flex items-center gap-3 group">
                             <div className="w-9 h-9 bg-slate-900 rounded-xl flex items-center justify-center shadow-lg shadow-slate-900/10 group-hover:scale-95 transition-all">
@@ -75,18 +61,24 @@ const Layout = ({ children }) => {
                                 </div>
                             </div>
                         )}
-                        <Link to="/" className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-all group">
-                            <LayoutGrid className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        <Link to="/" className={clsx(
+                            "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all group",
+                            isDashboard ? "text-slate-900 bg-slate-50" : "text-slate-400 hover:text-slate-900 hover:bg-slate-50"
+                        )}>
+                            <LayoutGrid className={clsx("w-5 h-5 transition-transform", !isDashboard && "group-hover:scale-110")} />
                             <span className="uppercase tracking-widest text-[10px]">Dashboard</span>
                         </Link>
 
-                        <Link to="/ledger" className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-all group">
-                            <Wallet className="w-5 h-5 group-hover:scale-110 transition-transform" />
+                        <Link to="/ledger" className={clsx(
+                            "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all group",
+                            isLedger ? "text-slate-900 bg-slate-50" : "text-slate-400 hover:text-slate-900 hover:bg-slate-50"
+                        )}>
+                            <Wallet className={clsx("w-5 h-5 transition-transform", !isLedger && "group-hover:scale-110")} />
                             <span className="uppercase tracking-widest text-[10px]">Wallet & Ledger</span>
                         </Link>
 
                         <button
-                            onClick={() => { localStorage.removeItem('token'); window.location.href = '/login' }}
+                            onClick={() => { window.localStorage.removeItem('token'); window.location.href = '/login' }}
                             className="flex items-center gap-2 px-4 py-2 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-all group"
                         >
                             <LogOut className="w-4 h-4 text-slate-400 group-hover:text-slate-600" />
@@ -98,7 +90,7 @@ const Layout = ({ children }) => {
 
             {/* Main Content */}
             <main className="flex-1 overflow-auto">
-                <div className="max-w-[1700px] mx-auto w-full">
+                <div className="max-w-full mx-auto w-full">
                     {children}
                 </div>
             </main>

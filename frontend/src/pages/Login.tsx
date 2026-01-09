@@ -1,15 +1,20 @@
-import React, { useState } from 'react';
+import { useState, FormEvent } from 'react';
 import api from '../services/api';
 import { useMutation } from '@tanstack/react-query';
 import { Zap, Mail, Lock, LogIn, Chrome as Google } from 'lucide-react';
+
+interface LoginResponse {
+    token: string;
+}
 
 const Login = () => {
     const [formData, setFormData] = useState({ email: '', password: '' });
 
     const loginMutation = useMutation({
-        mutationFn: (data) => api.post('/auth/login', data),
+        mutationFn: (data: typeof formData) => api.post('/auth/login', data),
         onSuccess: (res) => {
-            localStorage.setItem('token', res.data.token);
+            const data = res.data as LoginResponse;
+            localStorage.setItem('token', data.token);
             window.location.href = '/';
         },
         onError: () => {
@@ -17,7 +22,7 @@ const Login = () => {
         }
     });
 
-    const handleSubmit = (e) => {
+    const handleSubmit = (e: FormEvent) => {
         e.preventDefault();
         loginMutation.mutate(formData);
     };
@@ -68,10 +73,10 @@ const Login = () => {
 
                     <button
                         type="submit"
-                        disabled={loginMutation.isLoading}
+                        disabled={loginMutation.isPending}
                         className="w-full bg-slate-900 text-white py-4 rounded-xl text-xs font-bold uppercase tracking-widest transition-all hover:bg-black active:scale-[0.98] shadow-lg shadow-slate-900/10 flex items-center justify-center gap-3 disabled:opacity-50"
                     >
-                        {loginMutation.isLoading ? 'AUTHENTICATING...' : (
+                        {loginMutation.isPending ? 'AUTHENTICATING...' : (
                             <>
                                 ACCESS TERMINAL
                                 <LogIn className="w-4 h-4" />

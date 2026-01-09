@@ -28,8 +28,10 @@ router.post('/image', upload.single('file'), async (req: Request, res: Response)
         // Create Job Record
         const job = new Job({
             fileUrl: fileUrl,
+            s3Key: (req.file as any).key,
             originalName: req.file.originalname,
             mimeType: req.file.mimetype,
+            bucketId: 'admin',
             status: 'queued'
         });
         await job.save();

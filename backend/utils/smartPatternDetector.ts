@@ -68,6 +68,23 @@ const FIELD_PATTERNS: Record<string, FieldPattern> = {
     city: {
         regex: /^[A-Z][a-z]+(\s[A-Z][a-z]+)*$/,
         examples: ['Atlanta', 'New York', 'Los Angeles']
+    },
+    // New Fields
+    occupation: {
+        regex: /^[A-Z\s,.]+$/, // Often Uppercase text
+        examples: ['FINANCIAL ADVISOR', 'RETIRED']
+    },
+    committee: {
+        regex: /PAC|COMMITTEE|FUND|FRIENDS OF/i,
+        examples: ['Friends of Byron', 'Validation Committee']
+    },
+    inkind: {
+        regex: /INKIND|IN-KIND/i,
+        examples: ['Inkind', 'In-Kind']
+    },
+    description: {
+        regex: /^["'].*["']$|^[A-Z\s]+$/, // Quoted or uppercase
+        examples: ['"CATERING"', 'CONSULTING']
     }
 };
 
@@ -221,7 +238,7 @@ export function analyzePlainText(text: string): AnalysisResult {
  * Map detected fields to target schema
  */
 function mapFieldsToSchema(headers: string[] | null, fieldTypes: string[]): MappingResult {
-    const targetSchema = ['Name', 'City', 'State', 'Zip', 'Address', 'Phone', 'Email', 'Type', 'Amount', 'Date', 'Employer'];
+    const targetSchema = ['Name', 'City', 'State', 'Zip', 'Address', 'Phone', 'Email', 'Type', 'Amount', 'Date', 'Employer', 'Candidate', 'Committee', 'Occupation', 'Inkind', 'Description'];
     const mapping: Record<string, number> = {};
     let matchCount = 0;
 
@@ -254,12 +271,32 @@ function mapFieldsToSchema(headers: string[] | null, fieldTypes: string[]): Mapp
             mapping.Zip = index;
             matchCount++;
         }
+        // New Fields matching
+        else if (type === 'occupation' && !mapping.Occupation) {
+            mapping.Occupation = index;
+            matchCount++;
+        } else if (type === 'committee' && !mapping.Committee) {
+            mapping.Committee = index;
+            matchCount++;
+        } else if (type === 'description' && !mapping.Description) {
+            mapping.Description = index;
+            matchCount++;
+        }
 
-        // Try to match by header name
-        if (headers && header.includes('name')) mapping.Name = index;
-        if (headers && header.includes('city')) mapping.City = index;
-        if (headers && header.includes('state')) mapping.State = index;
-        if (headers && header.includes('amount')) mapping.Amount = index;
+        // Try to match by header name (Relaxed matching)
+        if (headers) {
+            if (header.includes('name') && !header.includes('contributor')) mapping.Name = index;
+            if (header.includes('city')) mapping.City = index;
+            if (header.includes('state')) mapping.State = index;
+            if (header.includes('amount')) mapping.Amount = index;
+            if (header.includes('date')) mapping.Date = index;
+
+            if (header.includes('candidate')) mapping.Candidate = index;
+            if (header.includes('committee')) mapping.Committee = index;
+            if (header.includes('occupation')) mapping.Occupation = index;
+            if (header.includes('inkind')) mapping.Inkind = index;
+            if (header.includes('desc')) mapping.Description = index;
+        }
     });
 
     return {

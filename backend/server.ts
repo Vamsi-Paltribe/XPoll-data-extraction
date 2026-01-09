@@ -47,7 +47,8 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(passport.initialize());
 
 // DB Connection
-const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/xpoll';
+const mongoUri = process.env.MONGO_URI || 'mongodb+srv://vamsistark_db_user:VWWCDaru3MBJ46eO@xpoll.re8mx8w.mongodb.net/';
+mongoose.set('strictQuery', false); // Suppress warning
 mongoose.connect(mongoUri)
   .then(() => console.log('MongoDB Connected'))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -85,6 +86,9 @@ import adminDataRoutes from './routes/admin-data';
 import uploadRoutes from './routes/upload';
 import imageUploadRoutes from './routes/image-upload';
 import jobsRoutes from './routes/jobs';
+import recordRoutes from './routes/records';
+import explorerRoutes from './routes/explorer'; // New Route
+import agentRoutes from './routes/agent';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/buckets', bucketRoutes);
@@ -92,7 +96,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/admin', adminDataRoutes); // Merged into /api/admin
 app.use('/api/admin', uploadRoutes); // Admin uploads
 app.use('/api/upload', imageUploadRoutes); // General upload
+app.use('/api/agent', agentRoutes); // New Agent Route
 app.use('/api/jobs', jobsRoutes);
+app.use('/api/records', recordRoutes);
+app.use('/api/explorer', explorerRoutes); // Data Explorer endpoint
 // setupWorker();
 
 app.listen(PORT, () => console.log(`Server started on port ${PORT}`));

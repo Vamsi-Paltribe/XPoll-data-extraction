@@ -35,7 +35,7 @@ interface Bucket {
 interface MasterRecord {
     _id: string;
     data: Record<string, string>;
-    updatedAt: string;
+    updatedAt: Date;
 }
 
 interface User {

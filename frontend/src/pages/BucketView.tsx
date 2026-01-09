@@ -6,13 +6,24 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import SyncModal from '../components/SyncModal';
 import DataImportModal from '../components/DataImportModal';
 import {
-    Database, Layers, Settings, ChevronRight, Zap, Trash2, Plus, Database as DataIcon, Info, CheckCircle2,
+    Layers, Settings, ChevronRight, Zap, Trash2, Plus, Database as DataIcon, Info, CheckCircle2,
     Cpu,
     Clock,
-    Upload
+    Upload,
+    LucideIcon
 } from 'lucide-react';
+// import { AxiosError } from 'axios'; // Removed unused import
 
-const TabButton = ({ active, onClick, label, count, icon: Icon }) => (
+
+interface TabButtonProps {
+    active: boolean;
+    onClick: () => void;
+    label: string;
+    count?: number;
+    icon?: LucideIcon;
+}
+
+const TabButton = ({ active, onClick, label, count, icon: Icon }: TabButtonProps) => (
     <button
         onClick={onClick}
         className={clsx(
@@ -34,6 +45,42 @@ const TabButton = ({ active, onClick, label, count, icon: Icon }) => (
     </button>
 );
 
+interface BucketParameter {
+    name: string;
+    type: string;
+    mapping: string;
+}
+
+interface Bucket {
+    _id: string; // Added _id
+    name: string;
+    lastSyncedAt?: string;
+    parameters: BucketParameter[];
+    description?: string;
+}
+
+interface RecordData {
+    [key: string]: any;
+}
+
+interface Record {
+    _id?: string;
+    data: RecordData;
+    status?: 'conflict' | 'valid' | string;
+    [key: string]: any;
+}
+
+interface SyncLog {
+    _id: string;
+    createdAt: string;
+    recordCount: number;
+    conflictCount: number;
+    filters?: {
+        states?: string[];
+    };
+    status: 'pending' | 'committed' | string;
+}
+
 const BucketView = () => {
     const { id } = useParams();
     const queryClient = useQueryClient();
@@ -43,19 +90,19 @@ const BucketView = () => {
     const [newParameter, setNewParameter] = useState({ name: '', type: 'text', mapping: '' });
 
     // Queries
-    const { data: bucket, isLoading: loadingBucket } = useQuery({
+    const { data: bucket, isPending: loadingBucket } = useQuery({
         queryKey: ['bucket', id],
         queryFn: async () => {
             const res = await api.get(`/buckets/${id}`);
-            return res.data;
+            return res.data as Bucket;
         }
     });
 
-    const { data: customerRecords = [], isLoading: loadingCustomer } = useQuery({
+    const { data: customerRecords = [] } = useQuery({
         queryKey: ['bucket-customers', id],
         queryFn: async () => {
             const res = await api.get(`/buckets/${id}/customer`);
-            return res.data;
+            return res.data as Record[];
         }
     });
 
@@ -71,7 +118,7 @@ const BucketView = () => {
         queryKey: ['bucket-batches', id],
         queryFn: async () => {
             const res = await api.get(`/buckets/${id}/batches`);
-            return res.data;
+            return res.data as SyncLog[];
         }
     });
 
@@ -79,14 +126,14 @@ const BucketView = () => {
         queryKey: ['bucket-staging', id, latestBatch?._id],
         queryFn: async () => {
             const res = await api.get(`/buckets/${id}/staging`);
-            return res.data;
+            return res.data as Record[];
         },
         enabled: !!latestBatch?._id,
     });
 
     // Mutations
     const syncMutation = useMutation({
-        mutationFn: (filters) => api.post(`/buckets/${id}/sync`, { filters }),
+        mutationFn: (filters: any) => api.post(`/buckets/${id}/sync`, { filters }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['bucket-latest-batch', id] });
             queryClient.invalidateQueries({ queryKey: ['bucket-batches', id] });
@@ -116,7 +163,7 @@ const BucketView = () => {
     });
 
     const updateSettingsMutation = useMutation({
-        mutationFn: (parameters) => api.put(`/buckets/${id}/settings`, { parameters }),
+        mutationFn: (parameters: any[]) => api.put(`/buckets/${id}/settings`, { parameters }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['bucket', id] });
         }
@@ -129,7 +176,7 @@ const BucketView = () => {
         setNewParameter({ name: '', type: 'text', mapping: '' });
     };
 
-    const removeParameter = (idx) => {
+    const removeParameter = (idx: number) => {
         const currentParams = bucket?.parameters || [];
         updateSettingsMutation.mutate(currentParams.filter((_, i) => i !== idx));
     };
@@ -143,10 +190,10 @@ const BucketView = () => {
         </div>
     );
 
-    const getDisplayColumns = (recs) => {
+    const getDisplayColumns = (recs: Record[]) => {
         const params = bucket?.parameters || [];
         const paramResult = params.map(p => p.mapping || p.name);
-        let discovered = [];
+        let discovered: string[] = [];
         if (recs.length > 0 && recs[0].data) {
             discovered = Object.keys(recs[0].data).filter(k =>
                 !['_id', '__v'].includes(k) && !paramResult.includes(k)
@@ -180,7 +227,7 @@ const BucketView = () => {
                         <tbody className="divide-y divide-slate-100">
                             {syncLogs.length === 0 ? (
                                 <tr>
-                                    <td colSpan="6" className="p-12 text-center text-xs font-medium text-slate-400">No telemetry recorded.</td>
+                                    <td colSpan={6} className="p-12 text-center text-xs font-medium text-slate-400">No telemetry recorded.</td>
                                 </tr>
                             ) : syncLogs.map(log => (
                                 <tr key={log._id} className="group hover:bg-slate-50 transition-colors">
@@ -202,7 +249,7 @@ const BucketView = () => {
                                         </span>
                                     </td>
                                     <td className="p-5 px-6 text-[10px] font-bold text-slate-400 uppercase tracking-tight">
-                                        {log.filters?.states?.length > 0 ? log.filters.states.join(', ') : 'Global Stream'}
+                                        {log.filters?.states?.length && log.filters.states.length > 0 ? log.filters.states.join(', ') : 'Global Stream'}
                                     </td>
                                     <td className="p-5 px-6">
                                         <div className={clsx(
@@ -227,22 +274,8 @@ const BucketView = () => {
         </div>
     );
 
-    const renderTable = (records, isStaging) => {
+    const renderTable = (records: Record[], isStaging: boolean) => {
         const columns = getDisplayColumns(records);
-        if (records.length === 0 && !isStaging) return (
-            <div className="flex flex-col items-center justify-center p-20 text-center bg-white rounded-[2rem] border border-slate-200 m-8 shadow-sm">
-                <Database className="w-12 h-12 text-slate-100 mb-6" />
-                <h3 className="text-base font-bold text-slate-900 tracking-tight">No Core Intelligence</h3>
-                <p className="text-slate-400 text-sm mt-1 max-w-sm font-medium">This registry node has no records committed to the master register yet.</p>
-                <button
-                    onClick={() => setShowSyncModal(true)}
-                    className="mt-8 px-8 py-3 bg-slate-900 text-white rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg shadow-slate-900/10"
-                >
-                    Initialize Sync
-                </button>
-            </div>
-        );
-
         if (records.length === 0 && isStaging) return null;
 
         return (
@@ -284,7 +317,7 @@ const BucketView = () => {
     };
 
     return (
-        <div className="min-h-screen flex flex-col bg-background font-sans">
+        <div className="min-h-[calc(90dvh-20rem)] flex flex-col bg-background font-sans">
             <header className="px-12 pt-10 bg-white">
                 <div className="flex justify-between items-center mb-8 w-full">
                     <div className="flex items-center gap-6">
@@ -417,7 +450,7 @@ const BucketView = () => {
 
                 {activeTab === 'processed' && (
                     <div className="animate-in fade-in duration-500 py-10">
-                        {latestBatch ? (
+                        {latestBatch && (
                             <div className="mb-10">
                                 <div className="max-w-[1700px] mx-auto px-8 mb-10 flex justify-between items-center">
                                     <div className="flex items-center gap-6">
@@ -435,43 +468,23 @@ const BucketView = () => {
                                     <div className="flex gap-4">
                                         <button
                                             onClick={() => rejectMutation.mutate()}
-                                            disabled={rejectMutation.isLoading}
+                                            disabled={rejectMutation.isPending}
                                             className="px-6 py-3 text-slate-400 hover:text-red-500 font-bold text-[10px] uppercase tracking-widest transition-all"
                                         >
                                             Discard Stream
                                         </button>
                                         <button
                                             onClick={() => commitMutation.mutate()}
-                                            disabled={commitMutation.isLoading}
+                                            disabled={commitMutation.isPending}
                                             className="px-8 py-3 bg-slate-900 text-white rounded-2xl text-[10px] font-bold uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10 flex items-center gap-3"
                                         >
-                                            {commitMutation.isLoading ? 'Processing...' : 'Commit to Core'}
+                                            {commitMutation.isPending ? 'Processing...' : 'Commit to Core'}
                                             <CheckCircle2 className="w-4 h-4" />
                                         </button>
                                     </div>
                                 </div>
                                 {renderTable(stagingRecords, true)}
                                 <div className="h-[1px] bg-slate-100 mx-8 my-16 opacity-50" />
-                            </div>
-                        ) : (
-                            <div className="max-w-[1700px] mx-auto px-8 mb-12">
-                                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-8 flex items-center justify-between">
-                                    <div className="flex items-center gap-6">
-                                        <div className="w-12 h-12 bg-white rounded-2xl border border-slate-200 flex items-center justify-center">
-                                            <Zap className="w-5 h-5 text-slate-300" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">Pipeline Synchronized</h3>
-                                            <p className="text-xs text-slate-400 font-medium mt-0.5">The ingestion stream is currently clear and ready for the next telemetry batch.</p>
-                                        </div>
-                                    </div>
-                                    <button
-                                        onClick={() => setShowSyncModal(true)}
-                                        className="px-6 py-3 bg-white border border-slate-200 text-slate-900 rounded-xl font-bold uppercase tracking-widest text-[10px] hover:border-slate-900 transition-all shadow-sm"
-                                    >
-                                        Initialize Sync
-                                    </button>
-                                </div>
                             </div>
                         )}
 
@@ -492,14 +505,18 @@ const BucketView = () => {
             <SyncModal
                 isOpen={showSyncModal}
                 onClose={() => setShowSyncModal(false)}
-                onSync={(filters) => syncMutation.mutate(filters)}
-                isSyncing={syncMutation.isLoading}
+                onSync={(filters: any) => syncMutation.mutate(filters)}
+                isSyncing={syncMutation.isPending}
             />
 
             {showImportModal && (
                 <DataImportModal
                     bucket={bucket}
                     onClose={() => setShowImportModal(false)}
+                    onSuccess={() => {
+                        queryClient.invalidateQueries({ queryKey: ['bucket-customers', id] });
+                        setShowImportModal(false);
+                    }}
                 />
             )}
         </div>

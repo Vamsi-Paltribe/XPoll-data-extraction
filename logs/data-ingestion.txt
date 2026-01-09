@@ -1,0 +1,277 @@
+[2026-01-08T07:18:37.190Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 3a9cd385c5102498caecca99597aa2b2 (Type: json)
+[2026-01-08T07:18:37.190Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T07:18:47.196Z] [ERROR] [Logic Extractor] Error: Operation `parsingtemplates.findOne()` buffering timed out after 10000ms
+[2026-01-08T07:18:47.197Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: unknown_structure (Type: text)
+[2026-01-08T07:18:47.197Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:18:57.227Z] [ERROR] [Logic Extractor] Error: Operation `parsingtemplates.findOne()` buffering timed out after 10000ms
+[2026-01-08T07:18:57.228Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: unknown_structure (Type: text)
+[2026-01-08T07:18:57.229Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:19:07.262Z] [ERROR] [Logic Extractor] Error: Operation `parsingtemplates.findOne()` buffering timed out after 10000ms
+[2026-01-08T07:19:53.272Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 3a9cd385c5102498caecca99597aa2b2 (Type: json)
+[2026-01-08T07:19:53.272Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T07:20:03.296Z] [ERROR] [Logic Extractor] Error: Operation `parsingtemplates.findOne()` buffering timed out after 10000ms
+[2026-01-08T07:20:03.297Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: unknown_structure (Type: text)
+[2026-01-08T07:20:03.297Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:20:13.346Z] [ERROR] [Logic Extractor] Error: Operation `parsingtemplates.findOne()` buffering timed out after 10000ms
+[2026-01-08T07:20:13.347Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: unknown_structure (Type: text)
+[2026-01-08T07:20:13.348Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:20:23.343Z] [ERROR] [Logic Extractor] Error: Operation `parsingtemplates.findOne()` buffering timed out after 10000ms
+[2026-01-08T07:21:29.789Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 3a9cd385c5102498caecca99597aa2b2 (Type: json)
+[2026-01-08T07:21:29.789Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T07:21:39.822Z] [WARNING] [Logic Extractor] JSON Ambiguous. Engaging LLM on 2 rows...
+[2026-01-08T07:21:39.823Z] [ERROR] [Logic Extractor] Error: firstRecord[f].trim is not a function. (In 'firstRecord[f].trim()', 'firstRecord[f].trim' is undefined)
+[2026-01-08T07:21:39.824Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: unknown_structure (Type: text)
+[2026-01-08T07:21:39.824Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:21:49.853Z] [INFO] [Logic Extractor] Analyzing Raw Text (80 chars). Detecting pattern...
+[2026-01-08T07:21:51.748Z] [SUCCESS] [Logic Extractor] Text Analysis Complete. Strategy: delimiter
+[2026-01-08T07:22:01.762Z] [INFO] [Logic Applicator] Applying strategy 'delimiter'...
+[2026-01-08T07:22:01.764Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: unknown_structure (Type: text)
+[2026-01-08T07:22:01.764Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:22:11.791Z] [INFO] [Logic Extractor] Analyzing Raw Text (89 chars). Detecting pattern...
+[2026-01-08T07:22:14.760Z] [SUCCESS] [Logic Extractor] Text Analysis Complete. Strategy: regex_matcher
+[2026-01-08T07:22:24.783Z] [INFO] [Logic Applicator] Applying strategy 'regex_matcher'...
+[2026-01-08T07:23:09.949Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 3a9cd385c5102498caecca99597aa2b2 (Type: json)
+[2026-01-08T07:23:09.949Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T07:23:19.989Z] [WARNING] [Logic Extractor] JSON Ambiguous. Engaging LLM on 2 rows...
+[2026-01-08T07:23:32.993Z] [INFO] [Logic Applicator] Applying strategy 'field_mapping'...
+[2026-01-08T07:23:32.995Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: unknown_structure (Type: text)
+[2026-01-08T07:23:32.996Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:23:43.021Z] [INFO] [Logic Extractor] Analyzing Raw Text (80 chars). Detecting pattern...
+[2026-01-08T07:23:44.266Z] [SUCCESS] [Logic Extractor] Text Analysis Complete. Strategy: delimiter
+[2026-01-08T07:23:54.285Z] [INFO] [Logic Applicator] Applying strategy 'delimiter'...
+[2026-01-08T07:23:54.286Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: unknown_structure (Type: text)
+[2026-01-08T07:23:54.287Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:24:04.313Z] [INFO] [Logic Extractor] Analyzing Raw Text (89 chars). Detecting pattern...
+[2026-01-08T07:24:07.240Z] [SUCCESS] [Logic Extractor] Text Analysis Complete. Strategy: regex_matcher
+[2026-01-08T07:24:17.270Z] [INFO] [Logic Applicator] Applying strategy 'regex_matcher'...
+[2026-01-08T07:37:30.031Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: ecbaaa6d94b2c7867524ef8860fb0dc5 (Type: text)
+[2026-01-08T07:37:30.032Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T07:37:40.053Z] [INFO] [Logic Extractor] Analyzing Raw Text (91 chars). Detecting pattern...
+[2026-01-08T07:37:44.475Z] [SUCCESS] [Logic Extractor] Text Analysis Complete. Strategy: delimiter
+[2026-01-08T07:37:54.519Z] [INFO] [Logic Applicator] Applying strategy 'delimiter'...
+[2026-01-08T07:41:29.676Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: db3bcb8da5f16fa257073b231586d0eb (Type: json)
+[2026-01-08T07:41:29.676Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T07:41:29.714Z] [INFO] [Logic Applicator] Applying strategy 'field_mapping'...
+[2026-01-08T07:53:21.078Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: db3bcb8da5f16fa257073b231586d0eb (Type: json)
+[2026-01-08T07:53:21.078Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T07:53:21.114Z] [INFO] [Logic Applicator] Applying strategy 'field_mapping'...
+[2026-01-08T07:55:17.156Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cad92464e78e7cc34481e72f35beb919 (Type: json)
+[2026-01-08T07:55:17.157Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T07:55:17.190Z] [WARNING] [Logic Extractor] JSON Ambiguous. Engaging LLM on 50 rows...
+[2026-01-08T07:55:23.667Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T07:55:23.668Z] [ERROR] [Logic Applicator] Error: Invalid regular expression flags
+[2026-01-08T08:00:49.329Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cad92464e78e7cc34481e72f35beb919 (Type: json)
+[2026-01-08T08:00:49.329Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T08:00:49.355Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen json florida.cs"
+[2026-01-08T08:00:49.357Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T08:00:49.358Z] [ERROR] [Logic Applicator] Error: Invalid regular expression flags
+[2026-01-08T08:01:33.615Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cad92464e78e7cc34481e72f35beb919 (Type: json)
+[2026-01-08T08:01:33.615Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T08:01:33.639Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen json florida.cs"
+[2026-01-08T08:01:33.642Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T08:01:33.642Z] [ERROR] [Logic Applicator] ❌ Error compiling generated function: Invalid regular expression flags
+Code: function(text) { 
+    const regex = /([\w\s,\"\']+)\s+\((\w+)\)\((\w+)\)\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+(\w+)\s+\"([\w\s,\"&\']+)\"\s+([\w\s\.]+)\s+(\w+),\s+(\w+)\s+(\d{5})\s+([\w\s]+)\s*\n?/g;
+
+    const result = regex.exec(text);
+
+    if (!result) return null;
+
+    return {
+        Name: result[1].trim(),
+        Party: result[2],
+        Type: result[3],
+        Date: result[4],
+        Amount: parseFloat(result[5].replace(/,/g, '')), // Convert to number
+        TransactionType: result[6],
+        Employer: result[7].trim(),
+        Address: result[8].trim(),
+        City: result[9].trim(),
+        State: result[10],
+        Zip: result[11],
+        Occupation: result[12] ? result[12].trim() : null
+    };
+}
+[2026-01-08T08:38:48.890Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cad92464e78e7cc34481e72f35beb919 (Type: json)
+[2026-01-08T08:38:48.890Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T08:38:48.917Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen json florida.cs"
+[2026-01-08T08:38:48.920Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T08:38:48.920Z] [ERROR] [Logic Applicator] ❌ Error compiling generated function: Invalid regular expression flags
+Code: function(text) { 
+    const regex = /([\w\s,\"\']+)\s+\((\w+)\)\((\w+)\)\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+(\w+)\s+\"([\w\s,\"&\']+)\"\s+([\w\s\.]+)\s+(\w+),\s+(\w+)\s+(\d{5})\s+([\w\s]+)\s*\n?/g;
+
+    const result = regex.exec(text);
+
+    if (!result) return null;
+
+    return {
+        Name: result[1].trim(),
+        Party: result[2],
+        Type: result[3],
+        Date: result[4],
+        Amount: parseFloat(result[5].replace(/,/g, '')), // Convert to number
+        TransactionType: result[6],
+        Employer: result[7].trim(),
+        Address: result[8].trim(),
+        City: result[9].trim(),
+        State: result[10],
+        Zip: result[11],
+        Occupation: result[12] ? result[12].trim() : null
+    };
+}
+[2026-01-08T08:42:30.047Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cad92464e78e7cc34481e72f35beb919 (Type: json)
+[2026-01-08T08:42:30.047Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T08:42:30.070Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen json florida.cs"
+[2026-01-08T08:42:30.073Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T08:42:30.073Z] [ERROR] [Logic Applicator] ❌ Error compiling generated function: Invalid regular expression flags
+Code: function(text) { 
+    const regex = /([\w\s,\"\']+)\s+\((\w+)\)\((\w+)\)\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+(\w+)\s+\"([\w\s,\"&\']+)\"\s+([\w\s\.]+)\s+(\w+),\s+(\w+)\s+(\d{5})\s+([\w\s]+)\s*\n?/g;
+
+    const result = regex.exec(text);
+
+    if (!result) return null;
+
+    return {
+        Name: result[1].trim(),
+        Party: result[2],
+        Type: result[3],
+        Date: result[4],
+        Amount: parseFloat(result[5].replace(/,/g, '')), // Convert to number
+        TransactionType: result[6],
+        Employer: result[7].trim(),
+        Address: result[8].trim(),
+        City: result[9].trim(),
+        State: result[10],
+        Zip: result[11],
+        Occupation: result[12] ? result[12].trim() : null
+    };
+}
+[2026-01-08T08:45:51.792Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cad92464e78e7cc34481e72f35beb919 (Type: json)
+[2026-01-08T08:45:51.792Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T08:45:51.816Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen json florida.cs"
+[2026-01-08T08:45:51.818Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T08:45:51.818Z] [ERROR] [Logic Applicator] ❌ Error compiling generated function: Invalid regular expression flags
+Code: function(text) { 
+    const regex = /([\w\s,\"\']+)\s+\((\w+)\)\((\w+)\)\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+(\w+)\s+\"([\w\s,\"&\']+)\"\s+([\w\s\.]+)\s+(\w+),\s+(\w+)\s+(\d{5})\s+([\w\s]+)\s*\n?/g;
+
+    const result = regex.exec(text);
+
+    if (!result) return null;
+
+    return {
+        Name: result[1].trim(),
+        Party: result[2],
+        Type: result[3],
+        Date: result[4],
+        Amount: parseFloat(result[5].replace(/,/g, '')), // Convert to number
+        TransactionType: result[6],
+        Employer: result[7].trim(),
+        Address: result[8].trim(),
+        City: result[9].trim(),
+        State: result[10],
+        Zip: result[11],
+        Occupation: result[12] ? result[12].trim() : null
+    };
+}
+[2026-01-08T08:46:13.923Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cad92464e78e7cc34481e72f35beb919 (Type: json)
+[2026-01-08T08:46:13.923Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T08:46:13.947Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen json florida.cs"
+[2026-01-08T08:46:13.949Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T08:46:13.950Z] [ERROR] [Logic Applicator] ❌ Error compiling generated function: Invalid regular expression flags
+Code: function(text) { 
+    const regex = /([\w\s,\"\']+)\s+\((\w+)\)\((\w+)\)\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+(\w+)\s+\"([\w\s,\"&\']+)\"\s+([\w\s\.]+)\s+(\w+),\s+(\w+)\s+(\d{5})\s+([\w\s]+)\s*\n?/g;
+
+    const result = regex.exec(text);
+
+    if (!result) return null;
+
+    return {
+        Name: result[1].trim(),
+        Party: result[2],
+        Type: result[3],
+        Date: result[4],
+        Amount: parseFloat(result[5].replace(/,/g, '')), // Convert to number
+        TransactionType: result[6],
+        Employer: result[7].trim(),
+        Address: result[8].trim(),
+        City: result[9].trim(),
+        State: result[10],
+        Zip: result[11],
+        Occupation: result[12] ? result[12].trim() : null
+    };
+}
+[2026-01-08T08:47:09.190Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cad92464e78e7cc34481e72f35beb919 (Type: json)
+[2026-01-08T08:47:09.190Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T08:47:09.215Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen json florida.cs"
+[2026-01-08T08:47:09.218Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T08:47:09.219Z] [ERROR] [Logic Applicator] ❌ Error compiling generated function: Invalid regular expression flags
+Code: function(text) { 
+    const regex = /([\w\s,\"\']+)\s+\((\w+)\)\((\w+)\)\s+(\d{2}/\d{2}/\d{4})\s+(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\s+(\w+)\s+\"([\w\s,\"&\']+)\"\s+([\w\s\.]+)\s+(\w+),\s+(\w+)\s+(\d{5})\s+([\w\s]+)\s*\n?/g;
+
+    const result = regex.exec(text);
+
+    if (!result) return null;
+
+    return {
+        Name: result[1].trim(),
+        Party: result[2],
+        Type: result[3],
+        Date: result[4],
+        Amount: parseFloat(result[5].replace(/,/g, '')), // Convert to number
+        TransactionType: result[6],
+        Employer: result[7].trim(),
+        Address: result[8].trim(),
+        City: result[9].trim(),
+        State: result[10],
+        Zip: result[11],
+        Occupation: result[12] ? result[12].trim() : null
+    };
+}
+[2026-01-08T10:35:18.283Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b187c5cb8f9f2c97e7fdde765c0711d (Type: text)
+[2026-01-08T10:35:18.283Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T10:46:52.801Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b187c5cb8f9f2c97e7fdde765c0711d (Type: text)
+[2026-01-08T10:46:52.802Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T10:49:25.582Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b187c5cb8f9f2c97e7fdde765c0711d (Type: text)
+[2026-01-08T10:49:25.583Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T10:51:16.096Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b187c5cb8f9f2c97e7fdde765c0711d (Type: text)
+[2026-01-08T10:51:16.097Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T11:08:56.240Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b187c5cb8f9f2c97e7fdde765c0711d (Type: text)
+[2026-01-08T11:08:56.240Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T11:09:24.448Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: db3bcb8da5f16fa257073b231586d0eb (Type: json)
+[2026-01-08T11:09:24.449Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-08T11:09:24.472Z] [INFO] [Logic Extractor] Engaging LLM on 50 rows...
+[2026-01-08T11:09:32.101Z] [INFO] [Logic Applicator] Applying strategy 'field_mapping'...
+[2026-01-08T11:11:55.225Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: b8f3d083e89d3f4306b821bb58739b25 (Type: text)
+[2026-01-08T11:11:55.225Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T11:24:13.037Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b187c5cb8f9f2c97e7fdde765c0711d (Type: text)
+[2026-01-08T11:24:13.037Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T11:24:13.058Z] [INFO] [Logic Extractor Debug] Checking Text Mode for type: 'text'
+[2026-01-08T11:24:13.058Z] [INFO] [Logic Extractor] Engaging LLM on Raw Text (PDF/TXT)...
+[2026-01-08T11:24:18.272Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T11:26:09.956Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b187c5cb8f9f2c97e7fdde765c0711d (Type: text)
+[2026-01-08T11:26:09.956Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T11:26:09.978Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen text USA_Voter_"
+[2026-01-08T11:26:09.980Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-08T11:27:49.168Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: b8f3d083e89d3f4306b821bb58739b25 (Type: text)
+[2026-01-08T11:27:49.168Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-08T11:34:52.719Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: b8f3d083e89d3f4306b821bb58739b25 (Type: text)
+[2026-01-08T11:34:52.719Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-09T11:25:01.984Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: b8f3d083e89d3f4306b821bb58739b25 (Type: text)
+[2026-01-09T11:25:01.993Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-09T11:25:02.019Z] [INFO] [Logic Extractor Debug] Checking Text Mode for type: 'text'
+[2026-01-09T11:25:02.020Z] [INFO] [Logic Extractor] Engaging LLM on Raw Text (PDF/TXT)...
+[2026-01-09T11:25:10.824Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-09T11:39:21.034Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: b8f3d083e89d3f4306b821bb58739b25 (Type: text)
+[2026-01-09T11:39:21.035Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-09T11:39:21.066Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen text test pdf c"
+[2026-01-09T11:39:21.068Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-09T11:39:46.371Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: cb2dc7ee7b9c3cb0c7f0ed5a29ee0673 (Type: text)
+[2026-01-09T11:39:46.371Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-09T11:39:46.397Z] [INFO] [Logic Extractor Debug] Checking Text Mode for type: 'text'
+[2026-01-09T11:39:46.398Z] [INFO] [Logic Extractor] Engaging LLM on Raw Text (PDF/TXT)...
+[2026-01-09T11:40:00.892Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-09T11:40:00.893Z] [WARNING] [Logic Applicator] ⚠️ Full text parse failed: Cannot read properties of undefined (reading 'trim'). Retrying line-by-line...
+[2026-01-09T11:40:47.422Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8f7995de95a4a36600cccc85eae7357f (Type: json)
+[2026-01-09T11:40:47.423Z] [INFO] [Logic Extractor] Processing json for logic extraction...
+[2026-01-09T11:40:47.453Z] [INFO] [Logic Extractor] Engaging LLM on 28 rows...
+[2026-01-09T11:40:52.038Z] [INFO] [Logic Applicator] Applying strategy 'field_mapping'...

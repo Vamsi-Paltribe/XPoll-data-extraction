@@ -2,8 +2,9 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
+import { useNavigate } from 'react-router-dom';
 import {
-    Shield, LogOut, Database, LayoutGrid, Wallet, UserPlus
+    Shield, LogOut, Database, LayoutGrid, Wallet, UserPlus, Clock, XCircle, FileText, CheckCircle, BellDot
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -19,8 +20,27 @@ interface NavLinkProps {
 
 const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
     const location = useLocation();
+    const navigate = useNavigate();
+    const [showNotifications, setShowNotifications] = React.useState(false);
 
-    const { data: admin } = useQuery({
+    const { data: jobs } = useQuery({
+        queryKey: ['jobs'],
+        queryFn: async () => {
+            const res = await api.get('/jobs');
+            return res.data;
+        },
+        refetchInterval: 50000,
+        enabled: true
+    });
+
+    const pendingReviewJobs = jobs?.filter((j: any) => j.status === 'waiting_approval') || [];
+
+    const handleJobClick = (jobId: string) => {
+        setShowNotifications(false);
+        navigate(`/manage?reviewJobId=${jobId}`);
+    };
+
+    useQuery({
         queryKey: ['admin-me'],
         queryFn: async () => {
             const res = await api.get('/auth/me');
@@ -73,6 +93,21 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                     </div>
 
                     <div className="flex items-center gap-8">
+                        {/* Notification Bell */}
+                        <div className="relative">
+                            <button
+                                onClick={() => setShowNotifications(true)}
+                                className="relative p-2 rounded-xl hover:bg-slate-100 transition-colors text-slate-500 hover:text-slate-700"
+                            >
+                                <BellDot className="w-6 h-6" />
+                                {pendingReviewJobs.length > 0 && (
+                                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full ring-2 ring-white animate-pulse">
+                                        {pendingReviewJobs.length}
+                                    </span>
+                                )}
+                            </button>
+                        </div>
+
                         <div className="w-[1px] h-8 bg-slate-100" />
                         <button
                             onClick={handleLogout}
@@ -88,6 +123,66 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
             <main className="mx-auto">
                 {children}
             </main>
+
+            {/* NOTIFICATION SIDEBAR */}
+            {showNotifications && (
+                <div className="fixed inset-0 z-[100] flex justify-end">
+                    <div
+                        className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm"
+                        onClick={() => setShowNotifications(false)}
+                    />
+                    <div className="relative w-full max-w-md bg-white h-full shadow-2xl p-6 flex flex-col animate-in slide-in-from-right duration-300">
+                        <div className="flex items-center justify-between mb-8">
+                            <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                                <Clock className="w-5 h-5 text-purple-600" />
+                                Notifications
+                            </h2>
+                            <button onClick={() => setShowNotifications(false)} className="p-2 hover:bg-slate-100 rounded-lg transition-colors">
+                                <XCircle className="w-5 h-5 text-slate-400" />
+                            </button>
+                        </div>
+
+                        {pendingReviewJobs.length === 0 ? (
+                            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-400">
+                                <CheckCircle className="w-12 h-12 mb-4 opacity-20" />
+                                <p className="font-medium">All caught up!</p>
+                                <p className="text-sm opacity-70">No pending approvals.</p>
+                            </div>
+                        ) : (
+                            <div className="flex-1 overflow-y-auto space-y-4">
+                                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4">Pending Approvals ({pendingReviewJobs.length})</p>
+                                {pendingReviewJobs.map((job: any) => (
+                                    <div
+                                        key={job._id}
+                                        onClick={() => handleJobClick(job._id)}
+                                        className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm hover:shadow-md hover:border-purple-200 hover:ring-1 hover:ring-purple-200 transition-all cursor-pointer group"
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex items-center gap-2">
+                                                <div className="p-2 bg-purple-50 text-purple-600 rounded-lg group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                                                    <FileText className="w-4 h-4" />
+                                                </div>
+                                                <span className="font-bold text-slate-700 group-hover:text-purple-700 transition-colors line-clamp-1">
+                                                    {job.originalName || job.fileName}
+                                                </span>
+                                            </div>
+                                            <span className="text-[10px] font-bold bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full border border-amber-100">
+                                                Review Needed
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-4 text-xs text-slate-500 pl-11">
+                                            <span className="flex items-center gap-1">
+                                                <Clock className="w-3 h-3" />
+                                                {new Date(job.createdAt).toLocaleDateString()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

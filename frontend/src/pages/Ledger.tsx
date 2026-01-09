@@ -9,6 +9,15 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 
+interface LedgerEntry {
+    _id: string;
+    createdAt: string;
+    type: 'debit' | 'credit';
+    reason: string;
+    amount: number;
+    bucketId?: { name: string };
+}
+
 const Ledger = () => {
     // Fetch User Data for Balance
     const { data: user, isLoading: loadingUser } = useQuery({
@@ -24,7 +33,7 @@ const Ledger = () => {
         queryKey: ['user-ledger'],
         queryFn: async () => {
             const res = await api.get('/auth/ledger');
-            return res.data;
+            return res.data as LedgerEntry[];
         }
     });
 

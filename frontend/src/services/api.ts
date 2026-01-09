@@ -1,13 +1,13 @@
-import axios from 'axios';
+import axios, { InternalAxiosRequestConfig } from 'axios';
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_URL || 'http://localhost:5000/api',
 });
 
-api.interceptors.request.use((config) => {
+api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('token');
     if (token) {
-        config.headers['x-auth-token'] = token;
+        config.headers.set('x-auth-token', token);
     }
     return config;
 });

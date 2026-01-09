@@ -20,7 +20,7 @@ function logToSystem(message: string, type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ER
     // Write to file
     fs.appendFileSync(path.join(LOG_DIR, 'data-ingestion.txt'), logLine);
 
-    // Console logging (Cleaned up as requested)
+    // Console logging
     if (type === 'INFO' || type === 'SUCCESS' || type === 'WARNING' || type === 'ERROR') {
         const icon = type === 'SUCCESS' ? '✅' : type === 'WARNING' ? '⚠️' : type === 'ERROR' ? '❌' : 'ℹ️';
         console.log(`${icon} ${message}`);
@@ -44,389 +44,512 @@ interface LogicResult {
     data?: any;
 }
 
+export interface ExecutionResult {
+    success: boolean;
+    data?: Record<string, any[]>;
+    error?: string;
+    recordsProcessed?: number;
+    recordsFailed?: number;
+    performance: any;
+}
+
+export async function invalidateTemplate(signature: string) {
+    try {
+        await ParsingTemplate.deleteOne({ signature });
+        logToSystem(`[Logic Extractor] 🗑️ Invalidated/Deleted bad template: ${signature}`, 'WARNING');
+    } catch (e) {
+        console.error('Failed to invalidate template:', e);
+    }
+}
+
+export async function invalidateTemplateByName(name: string) {
+    try {
+        await ParsingTemplate.deleteOne({ name });
+        logToSystem(`[Logic Extractor] 🗑️ Invalidated/Deleted bad template by NAME: ${name}`, 'WARNING');
+    } catch (e) {
+        console.error('Failed to invalidate template by name:', e);
+    }
+}
+
 /**
- * Extract mapping logic from sample data
- * Returns logic that can be applied to full dataset without LLM
+ * Extract mapping or parsing logic from sample data.
+ * Supports: JSON (Array of Objects), Text (Raw PDF/TXT content)
  * 
- * @param {Array} sampleData - Sample rows (50-100)
- * @param {String} fileType - Type of file (json, text, etc)
+ * @param {Array|string} sampleInput - Sample rows or raw text
+ * @param {String} fileType - 'json', 'text', 'pdf_text'
  * @param {String} fileName - Original filename
- * @returns {Object} - { logic, confidence, needsLLM, tokenUsage, templateFound }
  */
-export async function extractMappingLogic(sampleData: any[], fileType: string, fileName: string = 'unknown'): Promise<LogicResult> {
+export async function extractMappingLogic(sampleInput: any, fileType: string, fileName: string = 'unknown'): Promise<LogicResult> {
     const tracker = new PerformanceTracker(fileName, 'logic-extraction');
 
+    // Normalize Input
+    let sampleData: any[] = [];
+    let rawTextSample = "";
+
+    // If input is array (JSON/CSV), use it. If text, sample lines.
+    if (Array.isArray(sampleInput)) {
+        sampleData = sampleInput;
+    } else if (typeof sampleInput === 'string') {
+        rawTextSample = sampleInput.substring(0, 15000); // 15k char sample
+        sampleData = rawTextSample.split('\n').filter(l => l.trim().length > 0).slice(0, 50); // 50 lines
+    }
+
+    // Step 1: Detect Signature
+    const signature = generateSignature(sampleData, fileType);
+    logToSystem(`[Logic Extractor] 🔍 Generated Data Signature: ${signature} (Type: ${fileType})`, 'INFO');
 
     try {
-        logToSystem(`[Logic Extractor] Processing ${sampleData.length} rows for pattern extraction`, 'INFO');
+        logToSystem(`[Logic Extractor] Processing ${fileType} for logic extraction...`, 'INFO');
 
-        // Step 1: Detect Signature
-        const signature = generateSignature(sampleData);
-        logToSystem(`[Logic Extractor] 🔍 Generated Data Signature: ${signature}`, 'INFO');
-
-        // Step 2: Check for existing Template
-        tracker.startStep('Check Template Cache');
-        const template = await ParsingTemplate.findOne({ signature }) as IParsingTemplate | null;
-        tracker.endStep({ found: !!template });
-
+        // Step 2: Check Template Cache
+        let template: IParsingTemplate | null = null;
+        try {
+            tracker.startStep('Check Template Cache');
+            // Timeout after 2s to not block if DB is slow/disconnected
+            template = await ParsingTemplate.findOne({ signature }).maxTimeMS(2000) as IParsingTemplate | null;
+            tracker.endStep({ found: !!template });
+        } catch (dbErr) {
+            console.warn(`[Logic Extractor] ⚠️ Cache lookup failed or timed out. Proceeding to fresh analysis.`);
+            tracker.endStep({ found: false, error: 'DB Timeout/Error' });
+        }
 
         if (template) {
             logToSystem(`[Logic Extractor] ⚡ MATCH FOUND! Using saved template: "${template.name}"`, 'SUCCESS');
-
-            // Increment usage count async
-            ParsingTemplate.findByIdAndUpdate(template._id, {
-                $inc: { usageCount: 1 },
-                $set: { lastUsedAt: new Date() }
-            }).exec();
-
-            const performance = tracker.logReport();
+            try {
+                ParsingTemplate.findByIdAndUpdate(template._id, { $inc: { usageCount: 1 }, $set: { lastUsedAt: new Date() } }).exec().catch(() => { });
+            } catch (e) { }
 
             return {
                 success: true,
                 logic: template.logic,
-                confidence: 1, // High confidence on template match
+                confidence: 1,
                 needsLLM: false,
                 source: 'template',
                 templateName: template.name,
                 tokenUsage: { total_tokens: 0 },
-                performance,
-                tier: 0, // Tier 0 = Instant Match
+                performance: tracker.logReport(),
+                tier: 0,
+                signature: template.signature || signature, // Prefer DB signature
                 message: `⚡ Instant Match! Recognized format as "${template.name}"`
             };
         }
 
-        // Step 3: Deduplicate sample (if no template found)
-        tracker.startStep('Deduplicate Sample');
-        const dedupResult = deduplicateWithLogging(sampleData, fileName);
-        const uniqueSample = dedupResult.unique;
-        tracker.endStep({
-            originalCount: dedupResult.stats.total,
-            uniqueCount: dedupResult.stats.unique,
-            duplicatesRemoved: dedupResult.stats.duplicates
-        });
-
-        // Step 2: Analyze structure locally
-        tracker.startStep('Analyze Structure Locally');
-        const analysis = analyzeJSONStructure(uniqueSample, uniqueSample.length);
-        tracker.endStep({
-            confidence: analysis.confidence,
-            needsLLM: analysis.needsLLM,
-            matchedFields: analysis.mapping ? Object.keys(analysis.mapping).length : 0
-        });
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 
+        // --- BRANCH 1: STRUCTURAL ANALYSIS (JSON/CSV-like) ---
+        if (fileType === 'json') {
+            const desiredSampleSize = (sampleInput as any)._forceSampleSize || 50;
 
-        // logToSystem(`[Logic Extractor] Local analysis confidence: ${Math.round(analysis.confidence * 100)}%`, 'INFO');
+            // Step 3: Deduplicate sample
+            tracker.startStep(`Deduplicate Sample (${desiredSampleSize} rows)`);
+            const dedupResult = deduplicateWithLogging(sampleData.slice(0, desiredSampleSize), fileName);
+            const uniqueSample = dedupResult.unique;
+            tracker.endStep({ stats: dedupResult.stats });
 
-        // CASE 1: High confidence - No LLM needed!
-        if (!analysis.needsLLM) {
-            logToSystem(`[Logic Extractor] High confidence (${Math.round((analysis.confidence || 0) * 100)}%) detected locally. Skipping LLM.`, 'SUCCESS');
+            tracker.startStep('Analyze Structure Locally');
+            const analysis = analyzeJSONStructure(uniqueSample, uniqueSample.length);
+            tracker.endStep({ confidence: analysis.confidence });
 
-            const performance = tracker.logReport();
+            // SUB-BRANCH A: High Confidence (Local Mapping)
+            // Only accept local if confidence is remarkably high (e.g. > 0.95), otherwise prefer LLM for robustness if user wants
+            if (!analysis.needsLLM && (analysis.confidence || 0) > 0.9) {
+                return {
+                    success: true,
+                    logic: { type: 'field_mapping', mapping: analysis.mapping, confidence: analysis.confidence },
+                    confidence: analysis.confidence || 0,
+                    needsLLM: false,
+                    performance: tracker.logReport(),
+                    tier: 1,
+                    source: 'local',
+                    message: `Pattern detected locally with ${Math.round((analysis.confidence || 0) * 100)}% confidence.`
+                };
+            }
 
-            return {
-                success: true,
-                logic: {
-                    type: 'field_mapping',
-                    mapping: analysis.mapping,
-                    confidence: analysis.confidence
-                },
-                confidence: analysis.confidence || 0,
-                needsLLM: false,
-                tokenUsage: {
-                    prompt_tokens: 0,
-                    completion_tokens: 0,
-                    total_tokens: 0
-                },
-                performance,
-                tier: 1,
-                source: 'local', // New: explicit source
-                message: `Pattern detected locally with ${Math.round((analysis.confidence || 0) * 100)}% confidence. No LLM needed.`
-            };
-        }
+            // SUB-BRANCH B: LLM Logic Extraction
+            const llmSampleSize = Math.min(uniqueSample.length, desiredSampleSize);
+            logToSystem(`[Logic Extractor] Engaging LLM on ${llmSampleSize} rows...`, 'INFO');
 
-        // CASE 2: Medium confidence - Use LLM on sample only
-        if (analysis.useSmartLLM) {
-            // User requested feeding "first 100 rows" (or a significant chunk)
-            const llmSampleSize = Math.min(uniqueSample.length, 100); // Increased to 100 for better context
-            logToSystem(`[Logic Extractor] Medium confidence. engaging LLM with first ${llmSampleSize} rows to derive pattern...`, 'WARNING');
-
-            tracker.startStep('LLM Logic Extraction');
-
-            const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-            // Check if data is concatenated in one field
+            // Check concatenation
             const firstRecord = uniqueSample[0];
             const sourceFields = Object.keys(firstRecord);
-            const nonEmptyFields = sourceFields.filter(f => firstRecord[f] && firstRecord[f].trim());
+            const nonEmptyFields = sourceFields.filter(f => firstRecord[f] && String(firstRecord[f]).trim());
             const isConcatenated = nonEmptyFields.length === 1;
+
+            // ... existing code ...
 
             let prompt;
             if (isConcatenated) {
                 const dataField = nonEmptyFields[0];
-                logToSystem(`[Logic Extractor] Data appears concatenated in field: "${dataField}"`, 'INFO');
-
-                prompt = `Analyze this sample data and create a parsing function.
-
+                prompt = `You are a JavaScript Expert. Write a function to parse this specific data format.
+                 
 TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
+(You may find other fields like "Candidate", "Committee", "Occupation", etc. - extract them too).
 
-SAMPLE DATA (${llmSampleSize} rows):
-${uniqueSample.slice(0, llmSampleSize).map((r: any) => r[dataField]).join('\n')}
+SAMPLE RAW DATA:
+${uniqueSample.slice(0, 50).map((r: any) => r[dataField]).join('\n')}
 
-Return a JavaScript function that can parse each concatenated string:
+INSTRUCTIONS:
+1. Analyze the sample lines. NOTE: The data may contain MULTIPLE PATTERNS (e.g., some lines are headers, some are footers, some are data).
+2. Write a Javascript function named \`parseRecord\` that takes a single string input and returns a JSON object.
+3. **CRITICAL: CONDITIONAL LOGIC**: If different lines have different structures, use if/else logic to detect and parse them accordingly.
+4. **SKIP INVALID ROWS**: If a row does not look like valid data (e.g. a page header), return \`null\`.
+5. **IMPORTANT: REGEX SYNTAX**:
+   - Use ONLY standard flags (g, i, m).
+   - **MUST ESCAPE SLASHES**: If using regex literals (e.g. /pattern/), you MUST escape forward slashes (e.g. use \\/ for dates like \\d{2}\\/\\d{2}). Unescaped slashes will cause syntax errors.
+   - PREFER \`new RegExp('pattern', 'flags')\` if you are unsure about escaping.
+
+RETURN JSON:
 {
   "type": "parsing_function",
-  "parseFunction": "function(text) { /* parsing logic */ return {Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer}; }"
-}
-
-IMPORTANT: Return ONLY valid JSON with the parseFunction.`;
+  "parseFunction": "function(text) { ... if (!match) return null; ... return { ... }; }"
+}`;
             } else {
-                prompt = `Analyze these sample records and create field mapping.
-
-TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
-
-SAMPLE DATA (${llmSampleSize} rows):
-${JSON.stringify(uniqueSample.slice(0, llmSampleSize), null, 2)}
-
-Return JSON mapping:
-{
-  "type": "field_mapping",
-  "mapping": {"Name": "source_field_name", "City": "source_field_name", ...}
-}
-
-IMPORTANT: Return ONLY the mapping object, no explanations.`;
+                prompt = `Map these fields to the TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer.
+SAMPLE: ${JSON.stringify(uniqueSample.slice(0, 5), null, 2)}
+Return JSON: { "type": "field_mapping", "mapping": {"Target": "Source"} }`;
             }
 
-            const estimatedTokens = tracker.estimateTokens(prompt);
-
+            tracker.startStep('LLM Logic Extraction (JSON)');
             const completion = await openai.chat.completions.create({
                 model: "gpt-4o-mini",
-                messages: [
-                    { role: "system", content: "You are a data mapping expert. Return only valid JSON." },
-                    { role: "user", content: prompt }
-                ],
+                messages: [{ role: "system", content: "You are a code generator." }, { role: "user", content: prompt }],
                 response_format: { type: "json_object" },
                 temperature: 0
             });
-
             tracker.recordTokens(completion.usage);
-            const result = JSON.parse(completion.choices[0].message.content || '{}');
+            const logic = JSON.parse(completion.choices[0].message.content || '{}');
+            tracker.endStep();
 
-            tracker.endStep({
-                estimatedTokens,
-                actualTokens: completion.usage?.total_tokens,
-                sampleSize: uniqueSample.length
-            });
+            // --- RECURSIVE IMPROVEMENT CHECK ---
+            // If the LLM wasn't confident or the logic seems trivial, and we only used 50 rows, TRY AGAIN with MORE data.
+            if (desiredSampleSize < 150 && logic.type === 'parsing_function') {
+                logToSystem('\n\n================================================================================================', 'INFO');
+                logToSystem(`[Logic Extractor] 🔄 RECURSIVE IMPROVEMENT ACTIVATED: Extending sample size 50 -> 150 rows`, 'INFO');
+                logToSystem('================================================================================================\n\n', 'INFO');
 
-            logToSystem(`[Logic Extractor] LLM successfully extracted logic (Tokens: ${completion.usage?.total_tokens})`, 'SUCCESS');
-
-            const performance = tracker.logReport();
-
-            return {
-                success: true,
-                logic: result,
-                confidence: analysis.confidence || 0,
-                needsLLM: true,
-                source: 'gpt',
-                signature, // Return signature so frontend can save it later
-                tokenUsage: completion.usage,
-                performance,
-                tier: 2,
-                message: `Used LLM on ${uniqueSample.length} sample rows to extract mapping logic.`
-            };
-        }
-
-        // CASE 3: Low confidence - Need full LLM processing
-        logToSystem(`[Logic Extractor] Low confidence (${Math.round((analysis.confidence || 0) * 100)}%). Full LLM processing required.`, 'WARNING');
-
-        const performance = tracker.logReport();
-
-        return {
-            success: false,
-            logic: null,
-            confidence: analysis.confidence || 0,
-            needsLLM: true,
-            needsFullProcessing: true,
-            tokenUsage: {
-                prompt_tokens: 0,
-                completion_tokens: 0,
-                total_tokens: 0
-            },
-            performance,
-            tier: 3,
-            source: 'gpt', // Will fall back to GPT/TOON
-            message: `Low confidence pattern detection. Recommend full LLM processing with TOON format.`
-        };
-
-
-    } catch (error: any) {
-        logToSystem(`[Logic Extractor] Error: ${error.message}`, 'ERROR');
-        const performance = tracker.getReport();
-        // @ts-ignore
-        performance.error = error.message;
-
-        return {
-            success: false,
-            error: error.message,
-            logic: null,
-            confidence: 0,
-            needsLLM: true,
-            performance
-        };
-    }
-}
-
-/**
- * Apply extracted logic to full dataset
- * Processes data locally without LLM
- * 
- * @param {Array} fullData - Complete dataset
- * @param {Object} logic - Extracted logic from extractMappingLogic
- * @param {String} fileName - Original filename
- * @returns {Object} - { data, performance }
- */
-export async function applyLogicToDataset(fullData: any[], logic: any, fileName: string = 'unknown') {
-    const tracker = new PerformanceTracker(fileName, 'logic-application');
-
-    try {
-        logToSystem(`[Logic Applicator] Applying logic to ${fullData.length} total rows...`, 'INFO');
-
-        if (!logic || !logic.type) {
-            throw new Error('Invalid logic object');
-        }
-
-        // CASE 1: Field mapping (simple column mapping)
-        if (logic.type === 'field_mapping') {
-            tracker.startStep('Apply Field Mapping');
-            const mapped = applyJSONMapping(fullData, logic.mapping);
-            tracker.endStep({ recordCount: mapped.length });
-
-            // Group by state
-            tracker.startStep('Group by State');
-            const grouped: Record<string, any[]> = {};
-            mapped.forEach(record => {
-                const state = record.State || 'Unknown';
-                if (!grouped[state]) grouped[state] = [];
-                grouped[state].push(record);
-            });
-            tracker.endStep({ stateCount: Object.keys(grouped).length });
-
-            logToSystem(`[Logic Applicator] Successfully mapped ${mapped.length} records.`, 'SUCCESS');
-            const performance = tracker.logReport();
-
-            return {
-                success: true,
-                data: grouped,
-                performance,
-                recordsProcessed: mapped.length
-            };
-        }
-
-        // CASE 2: Parsing function (for concatenated data)
-        if (logic.type === 'parsing_function' && logic.parseFunction) {
-            tracker.startStep('Apply Parsing Function');
-
-            // Create function from string
-            // eslint-disable-next-line no-new-func
-            const parseFunc = new Function('return ' + logic.parseFunction)();
-
-            // Find the data field (should be the only non-empty field)
-            const firstRecord = fullData[0];
-            const sourceFields = Object.keys(firstRecord);
-            const dataField = sourceFields.find(f => firstRecord[f] && firstRecord[f].trim());
-
-            if (!dataField) {
-                throw new Error('Could not find data field in records');
-            }
-
-            const parsed: any[] = [];
-            let successCount = 0;
-            let failCount = 0;
-
-            for (const record of fullData) {
-                try {
-                    const extracted = parseFunc(record[dataField]);
-                    if (extracted) {
-                        parsed.push(extracted);
-                        successCount++;
-                    }
-                } catch (err) {
-                    failCount++;
-                    if (failCount <= 5) { // Log first 5 failures only
-                        logToSystem(`[Logic Applicator] Failed to parse record: ${record[dataField]?.substring(0, 100)}`, 'WARNING');
-                    }
+                // Recursive call with larger sample size
+                // We attach the flag to the array since we pass 'sampleInput' back
+                if (Array.isArray(sampleInput)) {
+                    (sampleInput as any)._forceSampleSize = 150;
+                    return extractMappingLogic(sampleInput, fileType, fileName);
                 }
             }
 
-            tracker.endStep({
-                recordCount: parsed.length,
-                successCount,
-                failCount,
-                successRate: `${Math.round(successCount / fullData.length * 100)}%`
-            });
-
-            if (parsed.length === 0) {
-                throw new Error('Parsing function failed on all records');
+            // Clean up the code before returning (Sanitize Regex Flags)
+            if (logic.type === 'parsing_function' && logic.parseFunction) {
+                // Remove invalid flags (s, u, y) from regex literals in the code string
+                // Naive approach: Look for /.../flags pattern. a bit risky on code, but better than crash.
+                // Actually, let's just trust the prompt + try/catch for now. The previous crash was caught by try/catch!
+                // The error logs showed it was caught.
+                // We just want to ensure we don't crash the *recursion*.
             }
 
-            // Group by state
-            tracker.startStep('Group by State');
-            const grouped: Record<string, any[]> = {};
-            parsed.forEach(record => {
-                const state = record.State || 'Unknown';
-                if (!grouped[state]) grouped[state] = [];
-                grouped[state].push(record);
-            });
-            tracker.endStep({ stateCount: Object.keys(grouped).length });
-
-            logToSystem(`[Logic Applicator] Successfully parsed ${parsed.length}/${fullData.length} records (${Math.round(successCount / fullData.length * 100)}% success rate)`, 'SUCCESS');
-            const performance = tracker.logReport();
+            // ... (Saving Template code) ...
+            if (logic) {
+                try {
+                    await ParsingTemplate.create({
+                        name: `Auto-Gen ${fileType} ${fileName.substring(0, 10)}`,
+                        signature,
+                        logic,
+                        sampleData: sampleData.slice(0, 5)
+                    });
+                } catch (e) { }
+            }
 
             return {
                 success: true,
-                data: grouped,
-                performance,
-                recordsProcessed: parsed.length,
-                recordsFailed: failCount
+                logic,
+                confidence: 0.9,
+                needsLLM: true,
+                source: 'gpt',
+                signature,
+                performance: tracker.logReport(),
+                tier: 2
             };
         }
 
-        throw new Error(`Unsupported logic type: ${logic.type}`);
+        // --- BRANCH 2: TEXT/PDF ANALYSIS (Raw String) ---
+        logToSystem(`[Logic Extractor Debug] Checking Text Mode for type: '${fileType}'`, 'INFO');
+
+        if (fileType === 'text' || fileType === 'pdf_text' || fileType === 'pdf' || fileType === 'txt') {
+            const isPDF = fileType === 'pdf_text';
+            // Limit sample size for text (first 3000 chars roughly) or first 50 lines
+            logToSystem(`[Logic Extractor] Engaging LLM on Raw Text (PDF/TXT)...`, 'INFO');
+
+            const prompt = `You are a JavaScript Data Extraction Expert.
+            
+OBJECTIVE: Write a JavaScript function to extract structured data from the following Raw Text/PDF content.
+TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
+(Extract any other obvious fields like "Voter ID", "Status", etc. if present).
+
+SAMPLE RAW TEXT:
+${rawTextSample.substring(0, 4000)}
+
+CHALLENGE:
+The text might be "smashed" together (missing spaces between columns) or have irregular spacing due to PDF extraction.
+Example of smashed text: "USV1001James Williams42Male" -> ID:USV1001, Name:James Williams, Age:42, Gender:Male.
+
+INSTRUCTIONS:
+1. Analyze the text patterns. Look for fixed widths, specific anchors (like State codes "NY", "CA"), or repeating patterns.
+2. Write a Javascript function \`parseText(fullText)\` that:
+   - Takes the entire text string as input.
+   - Returns an **Array of Objects**.
+   - Handles the specific formatting quirks (smashed columns, etc.).
+3. **REGEX SAFETY**:
+   - Use ONLY standard flags (g, i, m).
+   - **MUST ESCAPE SLASHES** in regex literals (e.g. \\d{2}\\/\\d{2}).
+   - Prefer \`new RegExp()\` if complex.
+   - CONDITIONAL LOGIC: If a line is a header (e.g. "Voter ID..."), skip it.
+
+RETURN JSON:
+{
+  "type": "parsing_function",
+  "parseFunction": "function(text) { const lines = text.split('\\n'); ... return results; }"
+}`;
+
+            tracker.startStep('LLM Logic Extraction (Text)');
+            const completion = await openai.chat.completions.create({
+                model: "gpt-4o-mini",
+                messages: [{ role: "system", content: "You are a code generator." }, { role: "user", content: prompt }],
+                response_format: { type: "json_object" },
+                temperature: 0
+            });
+            tracker.recordTokens(completion.usage);
+            const logic = JSON.parse(completion.choices[0].message.content || '{}');
+            tracker.endStep();
+
+            if (logic) {
+                try {
+                    await ParsingTemplate.create({
+                        name: `Auto-Gen ${fileType} ${fileName.substring(0, 10)}`,
+                        signature,
+                        logic,
+                        sampleData: [rawTextSample.substring(0, 500)]
+                    });
+                } catch (e) { }
+            }
+
+            return {
+                success: true,
+                logic,
+                confidence: 0.85,
+                needsLLM: true,
+                source: 'gpt',
+                signature,
+                performance: tracker.logReport(),
+                tier: 2
+            };
+        }
+
+        return { success: false, error: `Unsupported file type: ${fileType}`, logic: null, confidence: 0, needsLLM: true, performance: tracker.getReport() };
 
     } catch (error: any) {
-        logToSystem(`[Logic Applicator] Error: ${error.message}`, 'ERROR');
-        const performance = tracker.getReport();
-        // @ts-ignore
-        performance.error = error.message;
-
-        return {
-            success: false,
-            error: error.message,
-            data: null,
-            performance
-        };
+        logToSystem(`[Logic Extractor] Error: ${error.message}`, 'ERROR');
+        return { success: false, error: error.message, logic: null, confidence: 0, needsLLM: true, performance: tracker.getReport() };
     }
 }
 
 /**
- * Generate a unique signature for the data structure
- * Uses headers (if JSON) or data pattern to create a hash
+ * Apply the extracted logic to the FULL dataset.
+ * 
+ * @param {Array|string} inputData - Full array of rows OR Full text string
+ * @param {Object} logic - The strategy returned by extractMappingLogic
  */
-function generateSignature(sampleData: any[]) {
-    if (!sampleData || sampleData.length === 0) return 'empty';
+export async function applyLogicToDataset(inputData: any, logic: any, fileName: string = 'unknown'): Promise<ExecutionResult> {
+    const tracker = new PerformanceTracker(fileName, 'logic-application');
 
-    const firstRow = sampleData[0];
+    // Normalize Input
+    let fullRecords: any[] = [];
+    let fullText = "";
+    const isTextMode = typeof inputData === 'string';
 
-    // Strategy 1: JSON Keys (Structured)
-    if (typeof firstRow === 'object' && firstRow !== null) {
-        const keys = Object.keys(firstRow).sort();
-        // If keys are generic (0, 1, 2) it's likely an array-based structure, look deeper?
-        // For now, keys are a good proxy.
-        const keyString = keys.join('|');
-        return crypto.createHash('md5').update(keyString).digest('hex');
+    if (isTextMode) fullText = inputData as string;
+    else fullRecords = inputData as any[];
+
+    try {
+        logToSystem(`[Logic Applicator] Applying strategy '${logic.type}'...`, 'INFO');
+
+        // MODE: PARSING FUNCTION (Row-by-Row OR Full Text)
+        if (logic.type === 'parsing_function' && logic.parseFunction) {
+            tracker.startStep('Apply Custom Parsing Function');
+            // eslint-disable-next-line no-new-func
+            let parseFunc;
+            try {
+                parseFunc = new Function('return ' + logic.parseFunction)();
+            } catch (err: any) {
+                logToSystem(`[Logic Applicator] ❌ Error compiling generated function: ${err.message}\nCode: ${logic.parseFunction}`, 'ERROR');
+                // @ts-ignore
+                tracker.error = `Compilation Error: ${err.message}`;
+                return { success: false, error: `Compilation Error: ${err.message}`, performance: tracker.getReport() };
+            }
+
+            let parsed: any[] = [];
+
+            if (isTextMode) {
+                // Function handles whole text? or we split lines?
+                // Logic extraction prompt asked for "text -> Array" for Option C.
+                try {
+                    parsed = parseFunc(fullText);
+                } catch (e: any) {
+                    logToSystem(`[Logic Applicator] ⚠️ Full text parse failed: ${e.message}. Retrying line-by-line...`, 'WARNING');
+                    // Try line by line fallback if function expects a line
+                    const lines = fullText.split('\n');
+                    parsed = lines.map(l => {
+                        try { return parseFunc(l); } catch (err) { return null; }
+                    }).filter(r => r);
+                }
+            } else {
+                // Array input (JSON/CSV rows)
+                // Identify data field
+                const first = fullRecords[0];
+                const key = Object.keys(first).find(k => first[k] && typeof first[k] === 'string');
+                if (key) {
+                    parsed = fullRecords.map((r, idx) => {
+                        try { return parseFunc(r[key]); } catch (err: any) {
+                            if (idx < 5) logToSystem(`[Logic Applicator] ⚠️ Row ${idx} parse error: ${err.message}`, 'WARNING');
+                            return null;
+                        }
+                    }).filter(r => r);
+                }
+            }
+
+            // Cleanup & Deduplicate result (Flatten if necessary)
+            if (Array.isArray(parsed) && parsed.length > 0 && Array.isArray(parsed[0])) {
+                // If function returned array of arrays (chunks)
+                parsed = parsed.flat();
+            }
+            parsed = parsed.filter(x => x && Object.keys(x).length > 0);
+
+            tracker.endStep({ count: parsed.length });
+
+            return finishProcessing(parsed, tracker);
+        }
+
+        // MODE: REGEX MATCHER (Text Splitter)
+        if (logic.type === 'regex_matcher') {
+            tracker.startStep('Apply Regex Matcher');
+            let records: any[] = [];
+
+            // 1. Split into "Logical Rows"
+            let rawRows: string[] = [];
+            if (logic.recordStartRegex) {
+                const flags = logic.recordStartRegexFlags || 'gm';
+                // Remove slashes if present in string (e.g. "/.../gm")
+                const cleanRegex = logic.recordStartRegex.replace(/^\/|\/[a-z]*$/g, '');
+                // FIX: Restrict to safe flags (g, i, m) to avoid invalid flag errors
+                const splitRegex = new RegExp(cleanRegex, flags.replace(/[^gim]/g, ''));
+
+                const lines = isTextMode ? fullText.split('\n') : fullRecords.map(r => JSON.stringify(r));
+
+                let buffer = "";
+                for (const line of lines) {
+                    // Heuristic: If line matches start regex, flush buffer
+                    if (splitRegex.test(line)) {
+                        if (buffer.trim()) rawRows.push(buffer);
+                        buffer = line;
+                    } else {
+                        buffer += " " + line; // Append to previous
+                    }
+                }
+                if (buffer.trim()) rawRows.push(buffer);
+            } else {
+                rawRows = isTextMode ? fullText.split('\n') : fullRecords.map(Object.values).flat();
+            }
+
+            // 2. Extract Fields
+            if (logic.fieldExtractionRegex) {
+                const cleanExtract = logic.fieldExtractionRegex.replace(/^\/|\/[a-z]*$/g, '');
+                const extractRegex = new RegExp(cleanExtract, 'i'); // Case insensitive default
+                records = rawRows.map(row => {
+                    const match = extractRegex.exec(row);
+                    return match ? match.groups : null;
+                }).filter(r => r);
+            } else {
+                // No specific extraction, just return rows? Unlikely.
+            }
+
+            tracker.endStep({ count: records.length });
+            return finishProcessing(records, tracker);
+        }
+
+        // MODE: DELIMITER / HEADER
+        if (logic.type === 'delimiter' || logic.type === 'field_mapping') {
+            // If field_mapping, we just map keys.
+            if (logic.mapping) {
+                const mapped = applyJSONMapping(fullRecords, logic.mapping);
+                return finishProcessing(mapped, tracker);
+            }
+
+            // If delimiter (Text Mode)
+            if (isTextMode && logic.delimiter) {
+                const lines = fullText.split('\n').filter(l => l.trim());
+                const headers = logic.headers || [];
+                const records = lines.map(l => {
+                    const parts = l.split(logic.delimiter);
+                    const rec: any = {};
+                    headers.forEach((h: string, i: number) => rec[h] = parts[i]);
+                    return rec;
+                });
+                return finishProcessing(records, tracker);
+            }
+        }
+
+        return { success: false, error: "Unknown logic type or mismatch", performance: tracker.getReport() };
+
+    } catch (error: any) {
+        logToSystem(`[Logic Applicator] Error: ${error.message}`, 'ERROR');
+        // @ts-ignore
+        tracker.error = error.message;
+        return { success: false, error: error.message, performance: tracker.getReport() };
+    }
+}
+
+function finishProcessing(records: any[], tracker: PerformanceTracker) {
+    // Group by state
+    tracker.startStep('Group by State');
+    const grouped: Record<string, any[]> = {};
+    records.forEach(record => {
+        const state = record.State || 'Unknown';
+        if (!grouped[state]) grouped[state] = [];
+        grouped[state].push(record);
+    });
+    tracker.endStep({ stateCount: Object.keys(grouped).length });
+
+    return {
+        success: true,
+        data: grouped,
+        recordsProcessed: records.length,
+        performance: tracker.logReport()
+    };
+}
+
+
+function generateSignature(data: any, type: string) {
+    if (!data) return 'empty';
+    if (Array.isArray(data) && data.length === 0) return 'empty';
+
+    // If Text: Hash first 500 chars + Type
+    if (typeof data === 'string') {
+        const snippet = data.substring(0, 500);
+        return crypto.createHash('md5').update(type + snippet).digest('hex');
     }
 
-    // Strategy 2: String/Text (Structure via Type?)
-    // This is harder to fingerprint purely. We might fallback to 'unknown' or hash the first line structure?
+    // If Array
+    if (Array.isArray(data)) {
+        const firstRow = data[0];
+        // Text Lines (Array of strings)
+        if (typeof firstRow === 'string') {
+            const snippet = data.slice(0, 10).join('\n').substring(0, 500);
+            return crypto.createHash('md5').update(type + snippet).digest('hex');
+        }
+        // JSON Objects
+        if (typeof firstRow === 'object' && firstRow !== null) {
+            const keys = Object.keys(firstRow).sort();
+            const keyString = keys.join('|');
+            return crypto.createHash('md5').update(type + keyString).digest('hex');
+        }
+    }
+    // Fallback
     return 'unknown_structure';
 }

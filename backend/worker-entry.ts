@@ -5,11 +5,13 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // Connect to MongoDB if worker needs it (optional, but good practice)
-const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/xpoll';
+const mongoUri = process.env.MONGO_URI || 'mongodb+srv://vamsistark_db_user:VWWCDaru3MBJ46eO@xpoll.re8mx8w.mongodb.net/';
+mongoose.set('strictQuery', false); // Suppress warning
 
 mongoose.connect(mongoUri)
     .then(() => {
         console.log('MongoDB Connected for Worker');
+        console.log('Worker Script Initializing...');
         setupWorker();
     })
     .catch((err) => {

@@ -7,33 +7,38 @@ import path from 'path';
 dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const createAdmin = async () => {
-    const email = 'super@gmail.com';
-    const password = 'super';
-
-    try {
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/xpoll');
-
+    const upsertUser = async (email: string, password: string, name: string, isAdmin: boolean) => {
         let user = await User.findOne({ email });
-
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         if (user) {
             user.password = hashedPassword;
-            user.isAdmin = true;
+            user.isAdmin = isAdmin;
             await user.save();
-            console.log(`User ${email} updated and promoted to ADMIN.`);
+            console.log(`Updated User: ${email}`);
         } else {
             user = new User({
-                name: 'Super Admin',
-                email: email,
+                name,
+                email,
                 password: hashedPassword,
-                isAdmin: true,
+                isAdmin,
                 tokens: 999999
             });
             await user.save();
-            console.log(`Super Admin created: ${email} / ${password}`);
+            console.log(`Created User: ${email} / ${password} (Admin: ${isAdmin})`);
         }
+    };
+
+    try {
+        await mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://vamsistark_db_user:VWWCDaru3MBJ46eO@xpoll.re8mx8w.mongodb.net/');
+
+        // 1. Super Admin
+        await upsertUser('super@gmail.com', 'super', 'Super Admin', true);
+
+        // 2. Frontend Admin
+        await upsertUser('admin@gmail.com', 'admin', 'Frontend Admin', true);
+
         process.exit(0);
     } catch (err) {
         console.error(err);

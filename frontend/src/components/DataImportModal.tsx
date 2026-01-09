@@ -1,32 +1,51 @@
-import React, { useState } from 'react';
+import { useState, ChangeEvent } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../services/api';
 import { Upload, X, FileText, CheckCircle } from 'lucide-react';
+import { AxiosError } from 'axios';
 
-const DataImportModal = ({ bucket, onClose, onSuccess }) => {
+interface Bucket {
+    _id: string;
+    name: string;
+}
+
+interface DataImportModalProps {
+    bucket?: Bucket;
+    onClose: () => void;
+    onSuccess: () => void;
+}
+
+interface UploadStats {
+    totalReceived: number;
+}
+
+const DataImportModal = ({ bucket, onClose, onSuccess }: DataImportModalProps) => {
     const queryClient = useQueryClient();
-    const [file, setFile] = useState(null);
-    const [uploadStats, setUploadStats] = useState(null);
+    const [file, setFile] = useState<File | null>(null);
+    const [uploadStats, setUploadStats] = useState<UploadStats | null>(null);
 
     const uploadMutation = useMutation({
-        mutationFn: async (formData) => {
+        mutationFn: async (formData: FormData) => {
+            if (!bucket?._id) throw new Error("No bucket ID");
             const res = await api.post(`/buckets/${bucket._id}/upload`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
             return res.data;
         },
-        onSuccess: (data) => {
+        onSuccess: (data: UploadStats) => {
             setUploadStats(data);
-            queryClient.invalidateQueries({ queryKey: ['bucket-customers', bucket._id] });
-            queryClient.invalidateQueries({ queryKey: ['bucket', bucket._id] });
+            if (bucket?._id) {
+                queryClient.invalidateQueries({ queryKey: ['bucket-customers', bucket._id] });
+                queryClient.invalidateQueries({ queryKey: ['bucket', bucket._id] });
+            }
         },
-        onError: (err) => {
+        onError: (err: AxiosError<any>) => {
             alert(err.response?.data?.error || 'Upload failed');
         }
     });
 
-    const handleFileChange = (e) => {
-        if (e.target.files[0]) {
+    const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
             setFile(e.target.files[0]);
             setUploadStats(null);
         }
@@ -38,6 +57,8 @@ const DataImportModal = ({ bucket, onClose, onSuccess }) => {
         formData.append('file', file);
         uploadMutation.mutate(formData);
     };
+
+    if (!bucket) return null;
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-6 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">

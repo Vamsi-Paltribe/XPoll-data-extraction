@@ -18,7 +18,7 @@ services:
       - "5000:5000"
     environment:
       - PORT=5000
-      - MONGO_URI=mongodb://mongo:27017/xpoll
+      - MONGO_URI=mongodb+srv://vamsistark_db_user:VWWCDaru3MBJ46eO@xpoll.re8mx8w.mongodb.net/
       - JWT_SECRET=dev_secret_key_123
       - GOOGLE_CLIENT_ID=mock_client_id
       - GOOGLE_CLIENT_SECRET=mock_client_secret

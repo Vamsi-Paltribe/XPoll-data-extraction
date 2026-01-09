@@ -7,7 +7,7 @@ import Ledger from './pages/Ledger';
 import Layout from './components/Layout';
 
 // Protected Route Component
-const ProtectedRoute = ({ children }) => {
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token'); // or use your auth context/state
   const navigate = useNavigate();
 
@@ -17,7 +17,7 @@ const ProtectedRoute = ({ children }) => {
     }
   }, [token, navigate]);
 
-  return token ? children : null;
+  return token ? <>{children}</> : null;
 };
 
 // Handle Google Auth Callback

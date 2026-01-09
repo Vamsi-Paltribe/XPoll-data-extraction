@@ -1,25 +1,37 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, ChangeEvent } from 'react';
 import api from '../services/api';
 import { useParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import {
     X, Globe, Search, Database, Layers, Check,
     ChevronRight, Zap, MapPin, Filter
 } from 'lucide-react';
 
-const SyncModal = ({ isOpen, onClose, onSync, isSyncing }) => {
+interface SyncModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onSync: (filters: { states: string[]; cities: string[]; selectedHeaders: string[] }) => void;
+    isSyncing: boolean;
+}
+
+interface DirectoryData {
+    states: { name: string; code?: string; count?: number }[];
+    cities: string[];
+}
+
+const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
     const { id: bucketId } = useParams();
-    const [selectedStates, setSelectedStates] = useState([]);
-    const [selectedCities, setSelectedCities] = useState([]);
-    const [selectedHeaders, setSelectedHeaders] = useState([]);
+    const [selectedStates, setSelectedStates] = useState<string[]>([]);
+    const [selectedCities, setSelectedCities] = useState<string[]>([]);
+    const [selectedHeaders, setSelectedHeaders] = useState<string[]>([]);
 
     // Dynamic Data Fetching
     const { data: directory, isLoading: loadingDirectory } = useQuery({
         queryKey: ['global-directory'],
         queryFn: async () => {
             const res = await api.get('/buckets/global/directory');
-            return res.data;
+            return res.data as DirectoryData;
         },
         enabled: isOpen,
         staleTime: 5 * 60 * 1000 // Cache for 5 mins
@@ -35,9 +47,9 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }) => {
             const res = await api.post(`/buckets/${bucketId}/headers`, {
                 filters: { states: [], cities: [] }
             });
-            return res.data;
+            return res.data as string[];
         },
-        onSuccess: (data) => {
+        onSuccess: (data: string[]) => {
             setSelectedHeaders(data);
         }
     });
@@ -48,24 +60,24 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }) => {
         }
     }, [isOpen, fetchHeaders]);
 
-    const toggleState = (code) => {
+    const toggleState = (code: string) => {
         setSelectedStates(prev =>
             prev.includes(code) ? prev.filter(s => s !== code) : [...prev, code]
         );
     };
 
-    const handleCityChange = (e) => {
+    const handleCityChange = (e: ChangeEvent<HTMLSelectElement>) => {
         const value = e.target.value;
         if (value && !selectedCities.includes(value)) {
             setSelectedCities(prev => [...prev, value]);
         }
     };
 
-    const removeCity = (city) => {
+    const removeCity = (city: string) => {
         setSelectedCities(prev => prev.filter(c => c !== city));
     };
 
-    const toggleHeader = (header) => {
+    const toggleHeader = (header: string) => {
         setSelectedHeaders(prev =>
             prev.includes(header) ? prev.filter(h => h !== header) : [...prev, header]
         );

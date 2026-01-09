@@ -17,17 +17,17 @@ const Dashboard = () => {
     const [searchQuery, setSearchQuery] = useState('');
 
     // Queries
-    const { data: registries = [], isLoading } = useQuery({
+    const { data: registries = [], isPending: isLoading } = useQuery({
         queryKey: ['registries'],
         queryFn: async () => {
             const res = await api.get('/buckets');
-            return res.data;
+            return res.data as { _id: string; name: string; description?: string; recordCount?: number; lastSyncedAt?: string }[];
         }
     });
 
     // Mutations
     const createRegistryMutation = useMutation({
-        mutationFn: (data) => api.post('/buckets', data),
+        mutationFn: (data: { name: string; description: string }) => api.post('/buckets', data),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['registries'] });
             setShowModal(false);
@@ -48,7 +48,7 @@ const Dashboard = () => {
     );
 
     return (
-        <div className="min-h-screen bg-background p-12">
+        <div className="min-h-[calc(100vh-8rem)] bg-background p-12">
             <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-4">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Data Registries</h1>
@@ -127,7 +127,7 @@ const Dashboard = () => {
                         onClick={() => setShowModal(true)}
                         className="px-10 py-4 bg-slate-900 text-white rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl shadow-slate-900/20 hover:bg-black transition-all hover:-translate-y-1 active:translate-y-0"
                     >
-                        Initialize First Node
+                        Initialize Extraction
                     </button>
                 </div>
             )}
@@ -179,10 +179,10 @@ const Dashboard = () => {
                             </button>
                             <button
                                 onClick={() => createRegistryMutation.mutate(newRegistry)}
-                                disabled={!newRegistry.name || createRegistryMutation.isLoading}
+                                disabled={!newRegistry.name || createRegistryMutation.isPending}
                                 className="flex-[2] px-6 py-4 bg-slate-900 text-white rounded-2xl text-xs font-bold uppercase tracking-widest transition-all hover:bg-black disabled:opacity-50 shadow-lg shadow-slate-900/10"
                             >
-                                {createRegistryMutation.isLoading ? 'Processing...' : 'Deploy Registry'}
+                                {createRegistryMutation.isPending ? 'Processing...' : 'Deploy Registry'}
                             </button>
                         </div>
                     </div>

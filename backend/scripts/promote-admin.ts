@@ -7,7 +7,7 @@ dotenv.config({ path: path.join(__dirname, '../../.env') });
 
 const promote = async (email: string) => {
     try {
-        await mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/xpoll');
+        await mongoose.connect(process.env.MONGO_URI || 'mongodb+srv://vamsistark_db_user:VWWCDaru3MBJ46eO@xpoll.re8mx8w.mongodb.net/');
         const user = await User.findOneAndUpdate({ email }, { isAdmin: true }, { new: true });
         if (user) {
             console.log(`User ${email} is now an ADMIN.`);
