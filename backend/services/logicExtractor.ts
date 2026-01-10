@@ -276,34 +276,6 @@ RETURN JSON ONLY:
                 }
             }
 
-            // Clean up the code before returning (Sanitize Regex Flags)
-            // LLMs sometimes hallucinate flags like 's' or 'y' in combinations that can fail.
-            // We'll strip anything except the core 'gim' for maximum safety.
-            if (logic.type === 'parsing_function' && logic.parseFunction && typeof logic.parseFunction === 'string') {
-                try {
-                    // 1. Sanitize constructor calls: new RegExp('...', 'flags')
-                    logic.parseFunction = logic.parseFunction.replace(
-                        /new RegExp\s*\(\s*(['"`].*?['"`])\s*,\s*(['"`])([gimsuy]*)(['"`])\s*\)/g,
-                        (match: string, pattern: string, q1: string, flags: string, q2: string) => {
-                            const safeFlags = flags.replace(/[^gim]/g, '');
-                            return `new RegExp(${pattern}, ${q1}${safeFlags}${q2})`;
-                        }
-                    );
-
-                    // 2. Sanitize literals: /pattern/flags (Conservative: only if flags follow a slash at end of a statement/assignment)
-                    logic.parseFunction = logic.parseFunction.replace(
-                        /\/([^\/\n]+)\/([gimsuy]+)(?=[;,\s\n\)])/g,
-                        (match: string, pattern: string, flags: string) => {
-                            const safeFlags = flags.replace(/[^gim]/g, '');
-                            return `/${pattern}/${safeFlags}`;
-                        }
-                    );
-                } catch (e: any) {
-                    logToSystem(`[Logic Extractor] ⚠️ Regex sanitization failed: ${e.message}`, 'WARNING');
-                }
-            }
-
-            // ... (Saving Template code) ...
             if (logic) {
                 try {
                     await ParsingTemplate.create({
