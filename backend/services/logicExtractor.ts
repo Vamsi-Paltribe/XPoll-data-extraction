@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { PROMPTS } from '../config/prompts';
 import { analyzeJSONStructure, applyJSONMapping } from '../utils/jsonAnalyzer';
 import { deduplicateWithLogging } from '../utils/deduplicator';
 import PerformanceTracker from '../utils/performanceTracker';
@@ -12,6 +13,8 @@ const LOG_DIR = path.join(__dirname, '../../logs');
 if (!fs.existsSync(LOG_DIR)) {
     fs.mkdirSync(LOG_DIR, { recursive: true });
 }
+
+const SKIP_SCENARIO_A_TYPES = ['text', 'pdf_text', 'pdf', 'txt', 'image'];
 
 function logToSystem(message: string, type: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR' = 'INFO') {
     const timestamp = new Date().toISOString();
@@ -47,6 +50,7 @@ interface LogicResult {
 export interface ExecutionResult {
     success: boolean;
     data?: Record<string, any[]>;
+    allRecords?: any[]; // For preserving file order
     error?: string;
     recordsProcessed?: number;
     recordsFailed?: number;
@@ -95,12 +99,30 @@ export async function extractMappingLogic(sampleInput: any, fileType: string, fi
         sampleData = rawTextSample.split('\n').filter(l => l.trim().length > 0).slice(0, 100);
     }
 
-    // Step 1: Detect Signature
-    const signature = generateSignature(sampleData, fileType);
+    // Step 1: Detect Signature (Includes Parameters to avoid stale data if schema changes)
+    const signature = generateSignature(sampleData, fileType, parameters);
     logToSystem(`[Logic Extractor] 🔍 Generated Data Signature: ${signature} (Type: ${fileType})`, 'INFO');
 
     try {
         logToSystem(`[Logic Extractor] Processing ${fileType} for logic extraction...`, 'INFO');
+
+        // Step 1.5: Skip Scenario A for specific types (PDF, TXT, Image)
+        // We FORCE Scenario B (Direct LLM) for these types to ensure maximum integrity
+        const isSkippableType = SKIP_SCENARIO_A_TYPES.includes(fileType);
+
+        if (isSkippableType) {
+            logToSystem(`[Logic Extractor] ⏭️ FORCING Scenario B (Direct LLM) for skippable type: ${fileType}.`, 'INFO');
+            return {
+                success: false,
+                logic: null,
+                confidence: 0,
+                needsLLM: true,
+                needsFullProcessing: true,
+                performance: tracker.logReport(),
+                message: `Scenario A disabled for ${fileType}. Forced Scenario B.`,
+                error: `Scenario A disabled for ${fileType}. Direct extraction required for accuracy.`
+            };
+        }
 
         // Step 2: Check Template Cache
         let template: IParsingTemplate | null = null;
@@ -572,14 +594,17 @@ function finishProcessing(records: any[], tracker: PerformanceTracker) {
 }
 
 
-function generateSignature(data: any, type: string) {
+function generateSignature(data: any, type: string, parameters: any[] = []) {
     if (!data) return 'empty';
     if (Array.isArray(data) && data.length === 0) return 'empty';
 
-    // If Text: Hash first 500 chars + Type
+    // Create a string representing the target parameters
+    const paramString = parameters.map(p => p.name).sort().join('|');
+
+    // If Text: Hash first 500 chars + Type + Parameters
     if (typeof data === 'string') {
         const snippet = data.substring(0, 500);
-        return crypto.createHash('md5').update(type + snippet).digest('hex');
+        return crypto.createHash('md5').update(type + snippet + paramString).digest('hex');
     }
 
     // If Array
@@ -588,15 +613,15 @@ function generateSignature(data: any, type: string) {
         // Text Lines (Array of strings)
         if (typeof firstRow === 'string') {
             const snippet = data.slice(0, 10).join('\n').substring(0, 500);
-            return crypto.createHash('md5').update(type + snippet).digest('hex');
+            return crypto.createHash('md5').update(type + snippet + paramString).digest('hex');
         }
         // JSON Objects
         if (typeof firstRow === 'object' && firstRow !== null) {
             const keys = Object.keys(firstRow).sort();
             const keyString = keys.join('|');
-            return crypto.createHash('md5').update(type + keyString).digest('hex');
+            return crypto.createHash('md5').update(type + keyString + paramString).digest('hex');
         }
     }
     // Fallback
-    return 'unknown_structure';
+    return crypto.createHash('md5').update(type + 'unknown' + paramString).digest('hex');
 }

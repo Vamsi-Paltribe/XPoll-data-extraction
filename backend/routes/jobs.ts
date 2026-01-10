@@ -178,7 +178,8 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
         const result = await commitDataToRegistry({
             userId: 'ADMIN_JOB_USER',
             extractedData: dataToCommit,
-            jobId: req.params.id // Pass Job ID for Scalable Mode
+            jobId: req.params.id, // Pass Job ID for Scalable Mode
+            targetBucketId: job.bucketId // Pass Target Bucket ID
         });
 
         console.log('[Jobs API] Commit successful');

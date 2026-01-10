@@ -182,7 +182,21 @@ export function setupWorker() {
                 parameters: bucketParams
             });
 
-            console.log(`[Worker] ✅ Processing complete. Result keys: ${Object.keys(result.data).join(', ')}`);
+            if (result.success === false) {
+                console.warn(`[Worker] ⚠️ Soft Failure in Extraction: ${result.error}`);
+                await job.log(`[Worker] ⚠️ AI could not extract data: ${result.error}`);
+                await job.updateProgress(100);
+
+                // Update Job Status to 'failed' but DO NOT throw (this prevents BullMQ from retrying 20 times)
+                await jobDoc.updateOne({
+                    status: 'failed',
+                    error: result.error || 'AI Extraction yielded no results.',
+                    finishedAt: new Date()
+                });
+                return; // Proceed forward by exiting this job cleanly
+            }
+
+            console.log(`[Worker] ✅ Processing complete. Result keys: ${Object.keys(result.data || {}).join(', ')}`);
             await job.log(`[Worker] ✅ Processing complete.`);
             await job.updateProgress(80);
 
@@ -190,149 +204,161 @@ export function setupWorker() {
             console.log(`[Worker] 💾 Saving results with Token Check...`);
             await job.log(`[Worker] 💾 Saving results...`);
 
-            const groupedData = result.data;
             let allRecords: any[] = [];
+            const groupedData = result.data || {};
 
-            if (result.allRecords && Array.isArray(result.allRecords)) {
-                console.log(`[Worker] 🔄 Using preserved file order (${result.allRecords.length} records)`);
-                allRecords = result.allRecords;
-            } else if (Array.isArray(groupedData)) {
-                console.log(`[Worker] 🔄 Result data is already a flat array (${groupedData.length} records)`);
-                allRecords = groupedData;
-            } else {
-                console.log(`[Worker] ⚠️ Flattening grouped data...`);
-                // Flatten grouped data (Legacy / Fallback)
-                Object.keys(groupedData).forEach(groupKey => {
-                    const records = groupedData[groupKey];
-                    if (Array.isArray(records)) {
-                        records.forEach(r => allRecords.push(r));
-                    }
-                });
+            try {
+                if (result.allRecords && Array.isArray(result.allRecords)) {
+                    console.log(`[Worker] 🔄 Using preserved file order (${result.allRecords.length} records)`);
+                    allRecords = result.allRecords;
+                } else if (Array.isArray(groupedData)) {
+                    console.log(`[Worker] 🔄 Result data is already a flat array (${groupedData.length} records)`);
+                    allRecords = groupedData;
+                } else {
+                    console.log(`[Worker] ⚠️ Flattening grouped data...`);
+                    // Flatten grouped data (Legacy / Fallback)
+                    Object.keys(groupedData).forEach(groupKey => {
+                        const records = (groupedData as any)[groupKey];
+                        if (Array.isArray(records)) {
+                            records.forEach((r: any) => allRecords.push(r));
+                        }
+                    });
+                }
+            } catch (prepError: any) {
+                console.error(`[Worker] 💣 Critical failure during data preparation: ${prepError.message}`);
+                await job.log(`[Worker] ❌ Failed to prepare results: ${prepError.message}`);
+                await jobDoc.updateOne({ status: 'failed', error: `Data Prep Failed: ${prepError.message}` });
+                return;
             }
 
             console.log(`[Worker] 📊 Total Records Generated: ${allRecords.length}`);
 
-            // Import Models - correct default import handling
-            const RecordModule = await import('../models/Record');
-            // @ts-ignore
-            const RecordModel = RecordModule.default || RecordModule.Record;
+            try {
+                // Import Models - correct default import handling
+                const RecordModule = await import('../models/Record');
+                // @ts-ignore
+                const RecordModel = RecordModule.default || RecordModule.Record;
 
-            const UserModule = await import('../models/User');
-            // @ts-ignore
-            const UserModel = UserModule.default || UserModule.User;
+                const UserModule = await import('../models/User');
+                // @ts-ignore
+                const UserModel = UserModule.default || UserModule.User;
 
-            const MAX_BATCH_SIZE = 100;
-            let savedCount = 0;
-            const TOKEN_COST_PER_RECORD = 1; // Example Cost
+                const MAX_BATCH_SIZE = 100;
+                let savedCount = 0;
+                const TOKEN_COST_PER_RECORD = 1; // Example Cost
 
-            // Get Job Owner
-            // const fullJob = await JobModel.findById(jobId); // Redundant, we have jobDoc
-            const fullJob = jobDoc;
-            if (!fullJob) throw new Error("Job not found during processing");
+                // Get Job Owner 
+                const fullJob = jobDoc;
+                if (!fullJob) throw new Error("Job not found during processing");
 
-            // Get Bucket Owner
-            // Get Bucket Owner
-            let userId = null;
-            const bId = String(fullJob.bucketId);
+                // Get Bucket Owner
+                let userId = null;
+                const bId = String(fullJob.bucketId);
 
-            if (bId === 'admin') {
-                console.log('[Worker] 🛡️ Admin Job detected. Skipping token deduction.');
-            } else {
-                try {
-                    // @ts-ignore
-                    const bucket = await BucketModel.findById(fullJob.bucketId);
-                    // @ts-ignore
-                    userId = bucket?.createdBy || bucket?.owner;
-                } catch (err: any) {
-                    console.warn(`[Worker] ⚠️ Failed to lookup bucket '${fullJob.bucketId}': ${err.message}`);
-                }
-            }
-
-            if (!userId && bId !== 'admin') {
-                console.warn("Owner not found for bucket, proceeding without debit check (fallback)");
-            }
-
-            let isPaused = false;
-            let currentTokensConsumed = 0;
-
-            for (let i = 0; i < allRecords.length; i += MAX_BATCH_SIZE) {
-                // 1. Check User Tokens (Refresh per batch)
-                let user;
-                if (userId) {
-                    user = await UserModel.findById(userId);
-                    if (!user) throw new Error("User not found");
+                if (bId === 'admin') {
+                    console.log('[Worker] 🛡️ Admin Job detected. Skipping token deduction.');
+                } else {
+                    try {
+                        // @ts-ignore
+                        const bucket = await BucketModel.findById(fullJob.bucketId);
+                        // @ts-ignore
+                        userId = bucket?.createdBy || bucket?.owner;
+                    } catch (err: any) {
+                        console.warn(`[Worker] ⚠️ Failed to lookup bucket '${fullJob.bucketId}': ${err.message}`);
+                    }
                 }
 
-                const batch = allRecords.slice(i, i + MAX_BATCH_SIZE);
-                const batchCost = batch.length * TOKEN_COST_PER_RECORD;
+                if (!userId && bId !== 'admin') {
+                    console.warn("Owner not found for bucket, proceeding without debit check (fallback)");
+                }
 
-                if (user && user.tokens < batchCost) {
-                    // PAUSE JOB
-                    console.log(`[Worker] ⚠️ Insufficient tokens (${user.tokens} < ${batchCost}). Pausing Job.`);
-                    await job.log(`[Worker] ⚠️ Insufficient tokens. Pausing job at ${savedCount} records.`);
+                let isPaused = false;
+                let currentTokensConsumed = 0;
 
-                    isPaused = true;
+                for (let i = 0; i < allRecords.length; i += MAX_BATCH_SIZE) {
+                    // 1. Check User Tokens (Refresh per batch)
+                    let user;
+                    if (userId) {
+                        user = await UserModel.findById(userId);
+                        if (!user) throw new Error("User not found");
+                    }
 
-                    // Update Job to Paused
+                    const batch = allRecords.slice(i, i + MAX_BATCH_SIZE);
+                    const batchCost = batch.length * TOKEN_COST_PER_RECORD;
+
+                    if (user && user.tokens < batchCost) {
+                        // PAUSE JOB
+                        console.log(`[Worker] ⚠️ Insufficient tokens (${user.tokens} < ${batchCost}). Pausing Job.`);
+                        await job.log(`[Worker] ⚠️ Insufficient tokens. Pausing job at ${savedCount} records.`);
+
+                        isPaused = true;
+
+                        // Update Job to Paused
+                        await JobModel.findByIdAndUpdate(jobId, {
+                            status: 'paused',
+                            rowsProcessed: savedCount,
+                            tokensConsumed: currentTokensConsumed + (fullJob.tokensConsumed || 0),
+                            result: {
+                                error: `Partial Success: Saved ${savedCount} records. Paused due to insufficient balance.`,
+                                summary: `Paused: ${savedCount} / ${allRecords.length} records saved.`,
+                                partialData: true
+                            },
+                            metrics: result.performance, // Save metrics so far
+                        });
+                        break;
+                    }
+
+                    // 2. Save Batch
+                    const recordDocs = batch.map((r: any) => ({
+                        jobId: jobId,
+                        data: r
+                    }));
+                    await RecordModel.insertMany(recordDocs, { ordered: false });
+
+                    // 3. Deduct Tokens
+                    if (user) {
+                        user.tokens -= batchCost;
+                        await user.save();
+                    }
+
+                    currentTokensConsumed += batchCost;
+                    savedCount += batch.length;
+
+                    await job.updateProgress(80 + Math.floor((savedCount / Math.max(1, allRecords.length)) * 20));
+                }
+
+                if (!isPaused) {
+                    // Update Job with Result Summary
                     await JobModel.findByIdAndUpdate(jobId, {
-                        status: 'paused',
-                        rowsProcessed: savedCount,
-                        tokensConsumed: currentTokensConsumed + (fullJob.tokensConsumed || 0),
+                        status: 'waiting_approval',
                         result: {
-                            error: `Partial Success: Saved ${savedCount} records (${savedCount} credits processed). Paused due to insufficient balance for remaining items. Please add credits to resume.`,
-                            summary: `Paused: ${savedCount} / ${allRecords.length} records saved.`,
-                            partialData: true
+                            summary: 'Data stored in Records collection',
+                            totalRecords: savedCount,
+                            groups: Object.keys(groupedData),
+                            detectedMapping: result.mapping || {}
                         },
-                        metrics: result.performance, // Save metrics so far
+                        metrics: result.performance,
+                        tokensConsumed: currentTokensConsumed + (fullJob.tokensConsumed || 0),
+                        rowsProcessed: savedCount,
+                        updatedAt: new Date()
                     });
 
-                    // Store remaining records somewhere? Or just re-process?
-                    // ideally we store the 'result' JSON in S3 or job result temporarily.
-                    // For now, we save what we have and mark paused.
-                    break;
+                    console.log(`[Worker] 🎉 Job ${jobId} completed. Saved: ${savedCount}`);
+                    await job.log(`[Worker] 🎉 Job completed. Records: ${savedCount}`);
+                    await job.updateProgress(100);
                 }
 
-                // 2. Save Batch
-                const recordDocs = batch.map(r => ({
-                    jobId: jobId,
-                    data: r
-                }));
-                await RecordModel.insertMany(recordDocs, { ordered: false });
+                return { success: !isPaused, paused: isPaused };
 
-                // 3. Deduct Tokens
-                if (user) {
-                    user.tokens -= batchCost;
-                    await user.save();
-                }
-
-                currentTokensConsumed += batchCost;
-                savedCount += batch.length;
-
-                await job.updateProgress(80 + Math.floor((savedCount / allRecords.length) * 20));
-            }
-
-            if (!isPaused) {
-                // Update Job with Result Summary
+            } catch (saveError: any) {
+                console.error(`[Worker] 💣 Critical failure during final save: ${saveError.message}`);
+                await job.log(`[Worker] ❌ CRITICAL: Failed to finalize results: ${saveError.message}`);
                 await JobModel.findByIdAndUpdate(jobId, {
-                    status: 'waiting_approval',
-                    result: {
-                        summary: 'Data stored in Records collection',
-                        totalRecords: savedCount,
-                        groups: Object.keys(groupedData),
-                        detectedMapping: result.mapping || {} // Include semantic mapping info
-                    },
-                    metrics: result.performance,
-                    tokensConsumed: currentTokensConsumed + (fullJob.tokensConsumed || 0),
-                    rowsProcessed: savedCount,
-                    updatedAt: new Date()
+                    status: 'failed',
+                    error: `Critical Error during save: ${saveError.message}`
                 });
-
-                console.log(`[Worker] 🎉 Job ${jobId} completed. Saved: ${savedCount}`);
-                await job.log(`[Worker] 🎉 Job completed. Records: ${savedCount}`);
-                await job.updateProgress(100);
+                return { success: false, error: saveError.message };
             }
-
-            return { success: !isPaused, paused: isPaused };
 
         } catch (error: any) {
             console.error(`[Worker] ❌ Job ${jobId} FAILED:`, error.message);

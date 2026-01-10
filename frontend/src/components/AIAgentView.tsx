@@ -106,6 +106,7 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['bucket-jobs', bucketId] });
+            queryClient.invalidateQueries({ queryKey: ['registry-customers', bucketId] });
             queryClient.invalidateQueries({ queryKey: ['user-me'] }); // Refresh tokens
             setSelectedReviewJob(null);
         }

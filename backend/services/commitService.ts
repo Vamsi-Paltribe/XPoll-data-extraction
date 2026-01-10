@@ -10,6 +10,7 @@ interface CommitOptions {
     userId: string;
     extractedData?: any; // Optional now
     jobId?: string;      // New field
+    targetBucketId?: string; // NEW: The specific bucket to commit to
     saveAsTemplate?: boolean;
     templateName?: string;
     logic?: any;
@@ -17,17 +18,22 @@ interface CommitOptions {
 }
 
 export const commitDataToRegistry = async (options: CommitOptions) => {
-    const { userId, extractedData, jobId, saveAsTemplate, templateName, logic, signature } = options;
+    const { userId, extractedData, jobId, targetBucketId, saveAsTemplate, templateName, logic, signature } = options;
 
     let totalRecords = 0;
     const statesProcessed = new Set<string>();
 
+    console.log(`[Commit Service] Commit initialized. Target Bucket: ${targetBucketId || 'Global Registry'}`);
+
     // CASE 1: SCALABLE MODE (Job ID Provided)
     if (jobId) {
-        console.log(`[Commit Service] 🚀 Scalable Commit Mode for Job ${jobId}`);
+        console.log(`[Commit Service] 🚀 Scalable Commit Mode for Job ${jobId}. Target: ${targetBucketId || 'Global'}`);
 
         // We will process in batches to keep memory low
         const BATCH_SIZE = 2000;
+        const totalJobRecords = await RecordModel.countDocuments({ jobId });
+        console.log(`[Commit Service] Found ${totalJobRecords} records in RecordModel for Job ${jobId}`);
+
         let cursor = RecordModel.find({ jobId }).cursor({ batchSize: BATCH_SIZE });
 
         let batch: any[] = [];
@@ -36,19 +42,26 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
         const processBatch = async (items: any[]) => {
             if (items.length === 0) return;
 
-            // Group by State locally for this batch
-            const byState: Record<string, any[]> = {};
-            items.forEach(item => {
-                const data = item.data;
-                const state = data.State || 'Unknown';
-                if (!byState[state]) byState[state] = [];
-                byState[state].push(data);
-            });
+            // Case A: Targeted Commit (Private Bucket)
+            if (targetBucketId && targetBucketId !== 'admin') {
+                await insertRecordsToTargetBucket(targetBucketId, items, userId);
+            }
+            // Case B: Global Commit (State-based)
+            else {
+                // Group by State locally for this batch
+                const byState: Record<string, any[]> = {};
+                items.forEach(item => {
+                    const data = item.data;
+                    const state = data.State || 'Unknown';
+                    if (!byState[state]) byState[state] = [];
+                    byState[state].push(data);
+                });
 
-            // Insert per state
-            for (const stateName of Object.keys(byState)) {
-                statesProcessed.add(stateName);
-                await insertRecordsForState(stateName, byState[stateName], userId);
+                // Insert per state
+                for (const stateName of Object.keys(byState)) {
+                    statesProcessed.add(stateName);
+                    await insertRecordsForState(stateName, byState[stateName], userId);
+                }
             }
             totalRecords += items.length;
             console.log(`[Commit Service] Processed batch of ${items.length} records...`);
@@ -71,13 +84,29 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
     // CASE 2: LEGACY/DIRECT MODE (extractedData payload)
     else if (extractedData) {
         console.log(`[Commit Service] standard Commit Mode (Payload based)`);
-        const states = Object.keys(extractedData);
-        for (const stateName of states) {
-            const records = extractedData[stateName];
-            if (!records?.length) continue;
-            statesProcessed.add(stateName);
-            await insertRecordsForState(stateName, records, userId);
-            totalRecords += records.length;
+
+        if (targetBucketId && targetBucketId !== 'admin') {
+            // Fallback: If extractedData is grouped by state e.g. { 'NY': [...] }
+            // Flatten it first
+            let flatRecords: any[] = [];
+            if (typeof extractedData === 'object' && !Array.isArray(extractedData)) {
+                Object.values(extractedData).forEach((v: any) => {
+                    if (Array.isArray(v)) flatRecords.push(...v);
+                });
+            } else if (Array.isArray(extractedData)) {
+                flatRecords = extractedData;
+            }
+            await insertRecordsToTargetBucket(targetBucketId, flatRecords, userId);
+            totalRecords = flatRecords.length;
+        } else {
+            const states = Object.keys(extractedData);
+            for (const stateName of states) {
+                const records = extractedData[stateName];
+                if (!records?.length) continue;
+                statesProcessed.add(stateName);
+                await insertRecordsForState(stateName, records, userId);
+                totalRecords += records.length;
+            }
         }
     }
 
@@ -156,4 +185,56 @@ async function insertRecordsForState(stateName: string, records: any[], userId: 
     bucket!.availableCities = Array.from(existingCities).sort();
     bucket!.lastSyncedAt = new Date();
     await bucket!.save();
+}
+
+/**
+ * Helper: Inserts records into a SPECIFIC target bucket (Private Mode)
+ */
+async function insertRecordsToTargetBucket(bucketId: string, records: any[], userId: string) {
+    // 1. Find Bucket
+    const bucket = await Bucket.findById(bucketId);
+    if (!bucket) {
+        console.error(`[Commit Service] ❌ Target Bucket NOT FOUND: ${bucketId}`);
+        return;
+    }
+
+    // 2. Prepare Docs
+    const customerRecords = records.map((record: any) => {
+        // If the record came from RecordModel, it has a 'data' field.
+        // If it's raw extractedData, it's already the data object.
+        const rowData = record.data || record;
+
+        return {
+            bucketId: bucket._id,
+            data: rowData,
+            keyHash: rowData.keyHash || Math.random().toString(36).substring(7),
+            history: [{ action: 'imported', details: `Imported via approved extraction job` }]
+        };
+    });
+
+    // 3. Bulk Insert
+    try {
+        await CustomerRecord.insertMany(customerRecords, { ordered: false });
+    } catch (err: any) {
+        // Ignore duplicate errors
+        console.warn(`[Commit Service] ⚠️ Batch upload to bucket ${bucketId} had some duplicates/errors: ${err.message}`);
+    }
+
+    // 4. Update Metadata
+    const existingHeaders = new Set(bucket.availableHeaders || []);
+    const existingCities = new Set(bucket.availableCities || []);
+
+    records.forEach((rec: any) => {
+        const rowData = rec.data || rec;
+        Object.keys(rowData).forEach(k => {
+            if (!k.startsWith('_') && k !== 'bucketId') existingHeaders.add(k);
+        });
+        if (rowData.City) existingCities.add(rowData.City);
+    });
+
+    bucket.availableHeaders = Array.from(existingHeaders).sort();
+    bucket.availableCities = Array.from(existingCities).sort();
+    bucket.lastSyncedAt = new Date();
+    await bucket.save();
+    console.log(`[Commit Service] ✅ Successfully committed ${records.length} records to bucket "${bucket.name}"`);
 }

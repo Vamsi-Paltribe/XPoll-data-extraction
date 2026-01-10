@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { PROMPTS } from '../config/prompts';
 import { extractMappingLogic, applyLogicToDataset, invalidateTemplate, invalidateTemplateByName, ExecutionResult } from './logicExtractor';
 import { parseToon } from '../utils/toonParser';
 import { processPDFToText } from '../utils/pdfTableExtractor';
@@ -30,7 +31,14 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
         // --- PHASE 1: PRE-PROCESSING (Normalize to Text/JSON) ---
         tracker.startStep('Pre-processing');
 
-        if (type === 'pdf') {
+        // DOUBLE-LOCK: Check both passed type and filename extension
+        const lowerName = fileName.toLowerCase();
+        const isPdf = type === 'pdf' || lowerName.endsWith('.pdf');
+        const isImage = type === 'image' || ['.jpg', '.jpeg', '.png', '.webp', '.bmp'].some(ext => lowerName.endsWith(ext));
+        const isTxt = type === 'txt' || type === 'text' || type === 'pdf_text' || lowerName.endsWith('.txt');
+
+        if (isPdf) {
+            console.log(`[OpenAI Processor] 📄 PDF Detected (${fileName}). Forcing Scenario B...`);
             const pdfBuffer = Buffer.from(data, 'base64');
             const result = await processPDFToText(pdfBuffer);
             processableData = result.content;
@@ -42,8 +50,39 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
             } else {
                 console.log(`[OpenAI Processor] 📄 PDF Extracted (Layout Preserved). Pages: ${rawPages.length}, Total Length: ${processableData.length}`);
             }
+
+            if (!processableData || processableData.trim().length === 0) {
+                console.warn(`[OpenAI Processor] ❌ PDF text extraction yielded no content. The PDF might be scanned, encrypted, or corrupted.`);
+                if (rawPages.length === 0) {
+                    const errMsg = result.error ? `PDF Extraction Failed (${result.error})` : `PDF Extraction Failed: No text could be extracted.`;
+                    throw new Error(`${errMsg} The document might be corrupt or an unsupported format.`);
+                }
+            }
+
+            // IMMEDIATELY PROCESS PDF DIRECTLY (Scenario B)
+            console.log(`[OpenAI Processor] 🐢 Processing PDF via Direct LLM (Scenario B)...`);
+            if (rawPages.length > 0) {
+                executionResult = await processPagesDirectly(rawPages, fileName, parameters);
+            } else {
+                executionResult = await processPagesDirectly([processableData], fileName, parameters);
+            }
+
+            if (!executionResult.success) {
+                console.error(`[OpenAI Processor] ❌ Direct PDF Extraction Failed: ${executionResult.error}`);
+                executionResult = { success: false, data: {}, allRecords: [], error: executionResult.error, performance: tracker.getReport() };
+            }
+
+            return {
+                success: true,
+                data: executionResult.data || {},
+                allRecords: executionResult.allRecords || [],
+                performance: tracker.getReport(),
+                logicTier: 4,
+                source: 'direct-pdf',
+                error: executionResult.error
+            };
         }
-        else if (type === 'image') {
+        else if (isImage) {
             console.log(`[OpenAI Processor] 👁️ Using Vision LLM for direct image extraction...`);
             // Determine MIME type from filename or default to image/png
             const ext = fileName.split('.').pop()?.toLowerCase();
@@ -52,14 +91,41 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
             executionResult = await processImageDirectly(data, fileName, mimeType, parameters);
 
             if (!executionResult.success) {
-                throw new Error(`Direct Image Extraction Failed: ${executionResult.error}`);
+                console.error(`[OpenAI Processor] ❌ Direct Image Extraction Failed: ${executionResult.error}`);
+                executionResult = { success: false, data: {}, allRecords: [], error: executionResult.error, performance: tracker.getReport() };
             }
 
-            // Short-circuit: Return extracted data immediately
+            // Short-circuit: Return result
             return {
-                data: executionResult.data,
+                success: true,
+                data: executionResult.data || {},
+                allRecords: executionResult.allRecords || [],
                 performance: tracker.getReport(),
-                logicTier: 4
+                logicTier: 4,
+                source: 'vision-direct',
+                error: executionResult.error
+            };
+        }
+        else if (isTxt) {
+            // Treat raw text files like Scenario B (Direct) to avoid pattern recognition failures
+            console.log(`[OpenAI Processor] 📄 Processing ${type} directly via LLM (Scenario B)...`);
+            if (!processableData || processableData.trim().length < 10) {
+                throw new Error(`Extraction Failed: No readable text found in the ${type} file.`);
+            }
+            // For single page text, we treat it as one page
+            executionResult = await processPagesDirectly([processableData], fileName, parameters);
+
+            if (!executionResult.success) {
+                throw new Error(`Direct Text Extraction Failed: ${executionResult.error}`);
+            }
+
+            return {
+                success: true,
+                data: executionResult.data,
+                allRecords: executionResult.allRecords,
+                performance: tracker.getReport(),
+                logicTier: 4,
+                source: 'direct-text'
             };
         }
         else if (type === 'toon') {
@@ -165,16 +231,26 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
         const finalPerformance = tracker.getReport();
 
         return {
+            success: true,
             data: executionResult.data,
             performance: finalPerformance,
             logicTier: logicResult.tier
         };
 
     } catch (error: any) {
-        console.error('[OpenAI Processor] Error:', error.message);
+        console.error('[OpenAI Processor] 🚨 CRITICAL FAIL-SAFE ACTIVATED:', error.message);
         // @ts-ignore
         tracker.error = error.message;
-        throw error;
+
+        // Return a valid object instead of crashing the worker/server
+        return {
+            data: {},
+            allRecords: [],
+            performance: tracker.getReport(),
+            logicTier: 0,
+            error: error.message,
+            success: false
+        };
     }
 }
 
@@ -201,130 +277,23 @@ async function processPagesDirectly(pages: string[], fileName: string, parameter
             continue; // Skip empty pages
         }
 
-        console.log(`[OpenAI Processor] 🐢 Processing Page ${i + 1}/${pages.length} (Scenario B - Sequential Fallback)...`);
+        console.log(`[OpenAI Processor] 🐢 Processing Page ${i + 1}/${pages.length} (Scenario B - [v5.2-ELITE])...`);
 
-        const prompt = `You are an enterprise-grade Data Extraction Engine.
-
-Your ONLY responsibility is to extract structured tabular records from untrusted documents (PDF, CSV, XLSX, scanned images, OCR text) with MAXIMUM ACCURACY.
-
-Accuracy is MORE IMPORTANT than:
-- speed
-- cost
-- brevity
-- elegance
-
-If accuracy and cost conflict, ALWAYS choose accuracy.
-
-------------------------------------------------
-CORE RULES (NON-NEGOTIABLE)
-------------------------------------------------
-
-1. You MUST extract EVERY VALID RECORD present in the document.
-2. You MUST NEVER shift values between columns.
-3. You MUST NEVER guess data.
-4. You MUST NEVER hallucinate headers or values.
-5. If a cell is empty in the source, return an empty string "".
-6. Headers and row values must remain PERFECTLY ALIGNED.
-7. Output MUST be valid JSON only.
-
-------------------------------------------------
-USER-DEFINED PARAMETERS (STRICT)
-------------------------------------------------
-
-TARGET PARAMETERS: ${targetSchema}
-
-You MUST:
-- Extract ONLY these parameters
-- Ignore all other fields even if present
-- Preserve data exactly as found (except trimming whitespace)
-
-If a parameter does NOT exist for a row:
-- Use "" (empty string)
-
-You are NOT allowed to:
-- Rename parameters
-- Invent mappings
-- Merge fields
-- Split fields unless explicitly instructed
-
-------------------------------------------------
-ROW EXTRACTION POLICY
-------------------------------------------------
-
-A row is considered VALID if:
-- It contains a value for at least 2 TARGET PARAMETERS
-- The values clearly belong to the same row
-
-A row is INVALID if:
-- It contains only a single isolated value
-- It is a header
-- It is a footer
-- It is a summary or total row
-
-DO NOT SKIP valid rows.
-DO NOT STOP early.
-
-------------------------------------------------
-COLUMN MAPPING RULES
-------------------------------------------------
-
-You MUST map by SEMANTIC MEANING, not position alone.
-
-Detect source columns and map them to the TARGET SCHEMA naturally based on document headers.
-
-If a source column is ambiguous:
-- Leave the target field empty ("")
-- DO NOT guess
-
-------------------------------------------------
-OUTPUT FORMAT (STRICT)
-------------------------------------------------
-
-Return ONLY a JSON object with this shape:
-
-{
-  "data": [
-    {
-      "<parameter_1>": "",
-      "<parameter_2>": "",
-      "<parameter_3>": ""
-    }
-  ],
-  "mapping": {
-    "<source_header>": "<target_parameter>"
-  }
-}
-
-Rules:
-- "data" MUST be an array
-- Each object MUST contain ALL target parameters (${targetSchema})
-- Order of rows MUST match document order
-- mapping MUST reflect actual header matches found
-
-------------------------------------------------
-PAGE CONTENT:
-------------------------------------------------
-${pageText.substring(0, 15000)}
-
-------------------------------------------------
-FINAL RULE
-------------------------------------------------
-
-Return JSON ONLY.
-No markdown.
-No explanations.`;
+        // Use ELITE engine from prompts.ts
+        const prompt = PROMPTS.STRICT_EXTRACTION_ENGINE(targetSchema, pageText.substring(0, 15000));
 
         try {
             const completion = await openai.chat.completions.create({
-                model: "gpt-4o-mini",
+                model: "gpt-4o",
                 messages: [{ role: "user", content: prompt }],
                 response_format: { type: "json_object" },
                 temperature: 0
             });
             const result = JSON.parse(completion.choices[0].message.content || '{}');
-            if (result.data && Array.isArray(result.data)) {
-                console.log(`[OpenAI Processor] ✅ Page ${i + 1} Success: Extracted ${result.data.length} records.`);
-                allRecords.push(...result.data);
+            const records = result.records || result.data || [];
+            if (Array.isArray(records) && records.length > 0) {
+                console.log(`[OpenAI Processor] ✅ Page ${i + 1} Success: Extracted ${records.length} records.`);
+                allRecords.push(...records);
             } else {
                 console.warn(`[OpenAI Processor] ⚠️ Page ${i + 1} yielded no data array.`);
             }
@@ -347,8 +316,9 @@ No explanations.`;
     return {
         success: true,
         data: grouped,
+        allRecords: allRecords,
         recordsProcessed: allRecords.length,
-        performance: tracker.getReport() // empty tracker for now
+        performance: tracker.getReport()
     };
 }
 
@@ -366,145 +336,8 @@ async function processImageDirectly(base64Image: string, fileName: string, mimeT
         : "Detected fields from document headers";
 
 
-    const prompt = `You are an enterprise-grade Data Extraction Engine.
-
-Your ONLY responsibility is to extract structured tabular records from untrusted documents (PDF, CSV, XLSX, scanned images, OCR text) with MAXIMUM ACCURACY.
-
-Accuracy is MORE IMPORTANT than:
-- speed
-- cost
-- brevity
-- elegance
-
-If accuracy and cost conflict, ALWAYS choose accuracy.
-
-------------------------------------------------
-CORE RULES (NON-NEGOTIABLE)
-------------------------------------------------
-
-1. You MUST extract EVERY VALID RECORD present in the document.
-2. You MUST NEVER shift values between columns.
-3. You MUST NEVER guess data.
-4. You MUST NEVER hallucinate headers or values.
-5. If a cell is empty in the source, return an empty string "".
-6. Headers and row values must remain PERFECTLY ALIGNED.
-7. Output MUST be valid JSON only.
-
-------------------------------------------------
-USER-DEFINED PARAMETERS (STRICT)
-------------------------------------------------
-
-TARGET PARAMETERS: ${targetSchema}
-
-You MUST:
-- Extract ONLY these parameters
-- Ignore all other fields even if present
-- Preserve data exactly as found (except trimming whitespace)
-
-If a parameter does NOT exist for a row:
-- Use "" (empty string)
-
-You are NOT allowed to:
-- Rename parameters
-- Invent mappings
-- Merge fields
-- Split fields unless explicitly instructed
-
-------------------------------------------------
-DOCUMENT ANALYSIS PHASE (MANDATORY)
-------------------------------------------------
-
-Before extracting records, you MUST internally determine:
-
-1. Is this document tabular?
-2. What are the actual headers?
-3. Where does the FIRST DATA ROW start?
-4. Where does the LAST DATA ROW end?
-5. Are headers repeated across pages?
-6. Do rows span multiple lines?
-
-You MUST correctly detect:
-- Multi-line rows
-- Wrapped text
-- Repeated headers
-- Page breaks
-
-------------------------------------------------
-ROW EXTRACTION POLICY
-------------------------------------------------
-
-A row is considered VALID if:
-- It contains a value for at least 2 TARGET PARAMETERS
-- The values clearly belong to the same row
-
-A row is INVALID if:
-- It contains only a single isolated value
-- It is a header
-- It is a footer
-- It is a summary or total row
-
-DO NOT SKIP valid rows.
-DO NOT STOP early.
-
-------------------------------------------------
-COLUMN MAPPING RULES
-------------------------------------------------
-
-You MUST map by SEMANTIC MEANING, not position alone.
-
-Detect source columns and map them to the TARGET SCHEMA naturally based on document headers.
-
-If a source column is ambiguous:
-- Leave the target field empty ("")
-- DO NOT guess
-
-------------------------------------------------
-OUTPUT FORMAT (STRICT)
-------------------------------------------------
-
-Return ONLY a JSON object with this shape:
-
-{
-  "data": [
-    {
-      "<parameter_1>": "",
-      "<parameter_2>": "",
-      "<parameter_3>": ""
-    }
-  ],
-  "mapping": {
-    "<source_header>": "<target_parameter>"
-  }
-}
-
-Rules:
-- "data" MUST be an array
-- Each object MUST contain ALL target parameters (${targetSchema})
-- Order of rows MUST match document order
-- mapping MUST reflect actual header matches found
-
-------------------------------------------------
-QUALITY CONTROL (CRITICAL)
-------------------------------------------------
-
-Before responding, you MUST internally verify:
-- Every row has correct column alignment
-- No values drifted across parameters
-- No rows were skipped
-- JSON is valid and parseable
-
-If you are uncertain about a value:
-- Leave it empty
-- NEVER guess
-
-------------------------------------------------
-FINAL RULE
-------------------------------------------------
-
-Return JSON ONLY.
-No markdown.
-No explanations.
-No comments.`;
+    // Use ELITE engine from prompts.ts
+    const prompt = PROMPTS.STRICT_EXTRACTION_ENGINE(targetSchema);
 
     try {
         const response = await openai.chat.completions.create({
@@ -531,11 +364,11 @@ No comments.`;
 
         const content = response.choices[0].message.content || '{}';
         const result = JSON.parse(content);
-        const allRecords = result.data || [];
+        const allRecords = result.records || result.data || [];
 
         console.log(`[OpenAI Processor] ✅ Vision Success: Extracted ${allRecords.length} records.`);
 
-        // Group records (Try State, then City, then Category, then default to Records)
+        // Group records
         const grouped: Record<string, any[]> = {};
         allRecords.forEach((record: any) => {
             const groupKey = record.State || record.City || record.Category || 'Records';
@@ -546,6 +379,7 @@ No comments.`;
         return {
             success: true,
             data: grouped,
+            allRecords: allRecords,
             recordsProcessed: allRecords.length,
             performance: tracker.getReport()
         };
