@@ -69,23 +69,23 @@ router.get('/:id/preview', auth, async (req: Request, res: Response) => {
     try {
         const job = await Job.findById(req.params.id);
         if (!job) {
-             res.status(404).json({ error: 'Job not found' });
-             return;
+            res.status(404).json({ error: 'Job not found' });
+            return;
         }
 
         const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
         const { GetObjectCommand } = await import('@aws-sdk/client-s3');
         const { s3 } = await import('../config/s3');
-        
+
         const key = job.s3Key;
         if (!key) {
-             // Fallback to fileUrl if public? Or error.
-             if (job.fileUrl) {
-                 res.json({ url: job.fileUrl, type: job.mimeType || 'application/octet-stream' });
-                 return;
-             }
-             res.status(404).json({ error: 'No file key found' });
-             return;
+            // Fallback to fileUrl if public? Or error.
+            if (job.fileUrl) {
+                res.json({ url: job.fileUrl, type: job.mimeType || 'application/octet-stream' });
+                return;
+            }
+            res.status(404).json({ error: 'No file key found' });
+            return;
         }
 
         const command = new GetObjectCommand({
@@ -113,6 +113,40 @@ router.get('/:id', async (req: Request, res: Response) => {
             return;
         }
         res.json(job);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+
+// Get job records (for review) with pagination
+router.get('/:id/records', auth, async (req: Request, res: Response) => {
+    try {
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const skip = (page - 1) * limit;
+
+        // Find Record model
+        // @ts-ignore
+        const { default: RecordModel } = await import('../models/Record');
+
+        const [records, total] = await Promise.all([
+            RecordModel.find({ jobId: req.params.id })
+                .sort({ createdAt: 1 })
+                .skip(skip)
+                .limit(limit),
+            RecordModel.countDocuments({ jobId: req.params.id })
+        ]);
+
+        res.json({
+            records,
+            pagination: {
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit)
+            }
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }

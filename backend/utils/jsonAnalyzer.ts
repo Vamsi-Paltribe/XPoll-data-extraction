@@ -8,6 +8,7 @@ interface FieldPatterns {
     [key: string]: RegExp;
 }
 
+// FIELD_PATTERNS are used for heuristic type detection
 const FIELD_PATTERNS: FieldPatterns = {
     name: /^[A-Z][a-z]+(\s[A-Z][a-z]+)+$/,
     email: /^[\w\.-]+@[\w\.-]+\.\w+$/,
@@ -19,18 +20,19 @@ const FIELD_PATTERNS: FieldPatterns = {
     city: /^[A-Z][a-z]+(\s[A-Z][a-z]+)*$/
 };
 
-const TARGET_SCHEMA: { [key: string]: string[] } = {
-    Name: ['name', 'full_name', 'fullname', 'person', 'donor'],
-    City: ['city', 'town', 'municipality'],
+// Aliases for common fields to assist local mapping
+const DEFAULT_ALIASES: Record<string, string[]> = {
+    Name: ['name', 'full_name', 'fullname', 'person', 'donor', 'candidate'],
+    City: ['city', 'town', 'municipality', 'jurisdiction'],
     State: ['state', 'st', 'province'],
     Zip: ['zip', 'zipcode', 'postal', 'postalcode'],
     Address: ['address', 'street', 'addr'],
     Phone: ['phone', 'telephone', 'tel', 'mobile'],
     Email: ['email', 'e-mail', 'mail'],
-    Type: ['type', 'transaction_type', 'category'],
+    Type: ['type', 'transaction_type', 'category', 'office'],
     Amount: ['amount', 'value', 'sum', 'total', 'contribution'],
-    Date: ['date', 'transaction_date', 'dt'],
-    Employer: ['employer', 'company', 'organization']
+    Date: ['date', 'transaction_date', 'dt', 'year'],
+    Employer: ['employer', 'company', 'organization', 'committee']
 };
 
 interface AnalysisResult {
@@ -55,10 +57,11 @@ interface MappingResult {
 /**
  * Analyze JSON array structure
  * @param {Array} jsonArray - Array of objects
+ * @param {Array} parameters - Bucket parameters to map against
  * @param {number} sampleSize - Number of rows to analyze (10-20)
  * @returns {Object} - Analysis result
  */
-export function analyzeJSONStructure(jsonArray: any[], sampleSize: number = 15): AnalysisResult {
+export function analyzeJSONStructure(jsonArray: any[], parameters: any[] = [], sampleSize: number = 15): AnalysisResult {
     if (!Array.isArray(jsonArray) || jsonArray.length === 0) {
         return { needsLLM: true, reason: 'Empty or invalid data' };
     }
@@ -83,12 +86,12 @@ export function analyzeJSONStructure(jsonArray: any[], sampleSize: number = 15):
     }
 
     // Detect field types and map to target schema
-    const mapping = detectFieldMapping(sample[0], sample);
+    const mapping = detectFieldMapping(sample[0], sample, parameters);
 
     console.log(`[JSON Analyzer] Confidence: ${Math.round(mapping.confidence * 100)}%`);
-    console.log(`[JSON Analyzer] Matched fields: ${mapping.matchCount}/${Object.keys(TARGET_SCHEMA).length}`);
+    console.log(`[JSON Analyzer] Matched fields: ${mapping.matchCount}/${parameters.length || '?'}`);
 
-    if (mapping.confidence >= 0.7) {
+    if (parameters.length > 0 && mapping.confidence >= 0.7) {
         // High confidence - no LLM needed!
         return {
             needsLLM: false,
@@ -97,26 +100,16 @@ export function analyzeJSONStructure(jsonArray: any[], sampleSize: number = 15):
             totalRows: jsonArray.length,
             sampleRows: sample.length
         };
-    } else if (mapping.confidence >= 0.4) {
-        // Medium confidence - use LLM on sample only
+    } else {
+        // Fallback to LLM for better mapping accuracy if not 100% sure or if complex
         return {
             needsLLM: true,
             useSmartLLM: true,
             confidence: mapping.confidence,
-            reason: 'Medium confidence - need LLM verification',
+            reason: 'Needs LLM for robust mapping or transformation',
             sample: sample.slice(0, 50),
             totalRows: jsonArray.length,
             partialMapping: mapping.fieldMapping
-        };
-    } else {
-        // Low confidence - unstructured data
-        return {
-            needsLLM: true,
-            useSmartLLM: false,
-            confidence: mapping.confidence,
-            reason: 'Unstructured data - convert to TOON',
-            totalRows: jsonArray.length,
-            convertToTOON: true
         };
     }
 }
@@ -124,25 +117,33 @@ export function analyzeJSONStructure(jsonArray: any[], sampleSize: number = 15):
 /**
  * Detect field mapping from JSON to target schema
  */
-export function detectFieldMapping(firstRow: any, sample: any[]): MappingResult {
+export function detectFieldMapping(firstRow: any, sample: any[], parameters: any[] = []): MappingResult {
     const sourceKeys = Object.keys(firstRow);
     const fieldMapping: Record<string, string> = {};
     let matchCount = 0;
 
-    // Try to match each target field
-    Object.entries(TARGET_SCHEMA).forEach(([targetField, aliases]) => {
-        // Check by field name
+    if (parameters.length === 0) {
+        return { fieldMapping, matchCount: 0, confidence: 0 };
+    }
+
+    // Try to match each provided parameter
+    parameters.forEach((p: any) => {
+        const targetField = p.name;
+        const lowerTarget = targetField.toLowerCase().replace(/[_\s]/g, '');
+
+        // 1. Check by field name (Direct or Fuzzy match)
         for (const key of sourceKeys) {
             const lowerKey = key.toLowerCase().replace(/[_\s]/g, '');
 
-            if (aliases.some(alias => lowerKey.includes(alias.replace(/[_\s]/g, '')))) {
+            // Exact or inclusion match
+            if (lowerKey === lowerTarget || lowerTarget.includes(lowerKey) || lowerKey.includes(lowerTarget)) {
                 fieldMapping[targetField] = key;
                 matchCount++;
                 return;
             }
         }
 
-        // Check by value pattern
+        // 2. Check by value pattern (Heuristic)
         for (const key of sourceKeys) {
             const values = sample.map(row => row[key]).filter(v => v);
 
@@ -152,7 +153,7 @@ export function detectFieldMapping(firstRow: any, sample: any[]): MappingResult 
                     return pattern && pattern.test(String(v));
                 }).length / values.length;
 
-                if (matchRate > 0.7) {
+                if (matchRate > 0.8) { // Higher threshold for value-based matching
                     fieldMapping[targetField] = key;
                     matchCount++;
                     return;
@@ -164,7 +165,7 @@ export function detectFieldMapping(firstRow: any, sample: any[]): MappingResult 
     return {
         fieldMapping,
         matchCount,
-        confidence: matchCount / Object.keys(TARGET_SCHEMA).length
+        confidence: matchCount / parameters.length
     };
 }
 

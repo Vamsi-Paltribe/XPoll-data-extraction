@@ -1,4 +1,4 @@
-import { CustomerRecord, ICustomerRecord } from '../models/CustomerRecord';
+import { CustomerRecord } from '../models/CustomerRecord';
 import { StagingRecord } from '../models/StagingRecord';
 import { SyncBatch } from '../models/SyncBatch';
 import { Bucket, IBucket } from '../models/Bucket';
@@ -167,6 +167,9 @@ export const syncToStaging = async (bucketId: string, filters: FetchFilters) => 
     const existing = await CustomerRecord.find({ bucketId });
     existing.forEach(r => customerRecordsMap.set(r.keyHash, r.data));
 
+    const bucket = await Bucket.findById(bucketId);
+    const bucketParams = bucket?.parameters?.map(p => p.name) || [];
+
     let conflictCount = 0;
 
     for (const rec of sourceRecords) {
@@ -180,21 +183,17 @@ export const syncToStaging = async (bucketId: string, filters: FetchFilters) => 
         // --- TOKEN TRIMMING LOGIC ---
         let dataToSave = rec;
 
-        if (filters && filters.selectedHeaders && filters.selectedHeaders.length > 0) {
+        // --- PARAMETER FILTERING LOGIC ---
+        // If user defined specific parameters in the bucket, we ONLY sync those.
+
+        // Use user selected headers if present, otherwise fallback to bucket parameters
+        const effectiveHeaders = (filters && filters.selectedHeaders && filters.selectedHeaders.length > 0)
+            ? filters.selectedHeaders
+            : bucketParams;
+
+        if (effectiveHeaders.length > 0) {
             dataToSave = {};
-            // Always keep ID/BucketName if needed, but for "data", we only want what user asked.
-            // However, we probably want to keep the "Identity" fields (Name, City, State) implicitly?
-            // The user said "matches only that data".
-            // If they don't select "Phone", we shouldn't save "Phone".
-
-            // We should likely preserve the Key Fields (Name/City/State) to maintain integrity, 
-            // OR blindly trust the user's selection. 
-            // Let's include the selected headers PLUS the key fields if they aren't selected, 
-            // but maybe as hidden properties? 
-            // Actually, for simplicity and strict adherence: ONLY save selected headers.
-            // BUT `keyHash` is stored separately in the schema, so we can still ID the record!
-
-            filters.selectedHeaders.forEach(header => {
+            effectiveHeaders.forEach(header => {
                 if (rec[header] !== undefined) {
                     dataToSave[header] = rec[header];
                 }

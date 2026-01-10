@@ -79,7 +79,7 @@ export async function invalidateTemplateByName(name: string) {
  * @param {String} fileType - 'json', 'text', 'pdf_text'
  * @param {String} fileName - Original filename
  */
-export async function extractMappingLogic(sampleInput: any, fileType: string, fileName: string = 'unknown'): Promise<LogicResult> {
+export async function extractMappingLogic(sampleInput: any, fileType: string, fileName: string = 'unknown', parameters: any[] = []): Promise<LogicResult> {
     const tracker = new PerformanceTracker(fileName, 'logic-extraction');
 
     // Normalize Input
@@ -137,6 +137,12 @@ export async function extractMappingLogic(sampleInput: any, fileType: string, fi
 
         const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+        // Build target schema string (STRICT: No fallbacks)
+        const targetSchema = parameters.length > 0
+            ? parameters.map(p => p.name).join(', ')
+            : "Detected fields from document headers";
+
+
 
         // --- BRANCH 1: STRUCTURAL ANALYSIS (JSON/CSV-like) ---
         if (fileType === 'json') {
@@ -149,7 +155,7 @@ export async function extractMappingLogic(sampleInput: any, fileType: string, fi
             tracker.endStep({ stats: dedupResult.stats });
 
             tracker.startStep('Analyze Structure Locally');
-            const analysis = analyzeJSONStructure(uniqueSample, uniqueSample.length);
+            const analysis = analyzeJSONStructure(uniqueSample, parameters, uniqueSample.length);
             tracker.endStep({ confidence: analysis.confidence });
 
             // SUB-BRANCH A: High Confidence (Local Mapping)
@@ -182,35 +188,66 @@ export async function extractMappingLogic(sampleInput: any, fileType: string, fi
             let prompt;
             if (isConcatenated) {
                 const dataField = nonEmptyFields[0];
-                prompt = `You are a JavaScript Expert. Write a function to parse this specific data format.
-                 
-TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
-(You may find other fields like "Candidate", "Committee", "Occupation", etc. - extract them too).
+                prompt = `You are an enterprise-grade JavaScript Expert. Write a function to parse this specific data format with MAXIMUM ACCURACY.
+
+Accuracy is MORE IMPORTANT than speed, cost, or brevity.
+
+TARGET SCHEMA: ${targetSchema}
+
+------------------------------------------------
+CORE PARSING RULES
+------------------------------------------------
+1. Accuracy is PARAMOUNT. If data is ambiguous, return null or empty string.
+2. Write a Javascript function named \`parseRecord\` that takes a single string input and returns a JSON object.
+3. Every field in the TARGET SCHEMA must be present in the output object (use "" if missing).
+
+------------------------------------------------
+RECORD INCLUSION POLICY
+------------------------------------------------
+- A row is considered VALID if it contains a value for at least 2 TARGET PARAMETERS.
+- If it has only one parameter (e.g. only Name), return null/skip it.
+- Skip headers, footers, and summary rows.
+
+------------------------------------------------
+REGULAR EXPRESSIONS
+------------------------------------------------
+- Use \`new RegExp('pattern', 'flags')\` for safety.
+- Extract fields accurately using named groups or position.
 
 SAMPLE RAW DATA:
 ${uniqueSample.slice(0, 50).map((r: any) => r[dataField]).join('\n')}
 
-INSTRUCTIONS:
-1. Analyze the sample lines. NOTE: The data may contain MULTIPLE PATTERNS (e.g., some lines are headers, some are footers, some are data).
-2. Write a Javascript function named \`parseRecord\` that takes a single string input and returns a JSON object.
-3. **CRITICAL: CONDITIONAL LOGIC**: If different lines have different structures, use if/else logic to detect and parse them accordingly.
-4. **SKIP INVALID ROWS**: If a row does not look like valid data (e.g. a page header), return \`null\`.
-5. **MISSING DATA**: If a field (like State, Zip, etc.) is not present in the content, return an empty string (\"\"). **NEVER** return comments or explanations like \"// State not provided\".
-5. **IMPORTANT: REGEX SYNTAX**:
-   - Use ONLY standard flags (g, i, m).
-   - **MUST ESCAPE SLASHES**: If using regex literals (e.g. /pattern/), you MUST escape forward slashes (e.g. use \\/ for dates like \\d{2}\\/\\d{2}). Unescaped slashes will cause syntax errors.
-   - PREFER \`new RegExp('pattern', 'flags')\` if you are unsure about escaping.
-
-RETURN JSON:
+RETURN JSON ONLY:
 {
   "type": "parsing_function",
-  "parseFunction": "function(text) { ... if (!match) return null; ... return { ... }; }",
-  "instructions": "Ensure values for fields not found in the input are returned as empty strings (\"\") or null, NOT comments or explanations."
+  "parseFunction": "function(text) { ... }",
+  "instructions": "Ensure results follow the target schema."
 }`;
             } else {
-                prompt = `Map these fields to the TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer.
-SAMPLE: ${JSON.stringify(uniqueSample.slice(0, 5), null, 2)}
-Return JSON: { "type": "field_mapping", "mapping": {"Target": "Source"} }`;
+                prompt = `You are an enterprise-grade Data Mapping Expert.
+Map the following source fields to the TARGET SCHEMA with MAXIMUM ACCURACY.
+
+Accuracy is MORE IMPORTANT than speed, cost, or brevity.
+
+TARGET SCHEMA: ${targetSchema}
+
+------------------------------------------------
+SEMANTIC RULES
+------------------------------------------------
+- Map source data to the TARGET SCHEMA naturally based on document headers.
+- If a target field has no equivalent, map it to null.
+- If multiple source fields could fit, choose the one that matches the schema most closely.
+
+SAMPLE RECORDS:
+${JSON.stringify(uniqueSample.slice(0, 5), null, 2)}
+
+RETURN JSON ONLY:
+{
+  "type": "field_mapping",
+  "mapping": {
+    "TargetParameter": "SourceField"
+  }
+}`;
             }
 
             tracker.startStep('LLM Logic Extraction (JSON)');
@@ -235,17 +272,35 @@ Return JSON: { "type": "field_mapping", "mapping": {"Target": "Source"} }`;
                 // We attach the flag to the array since we pass 'sampleInput' back
                 if (Array.isArray(sampleInput)) {
                     (sampleInput as any)._forceSampleSize = 150;
-                    return extractMappingLogic(sampleInput, fileType, fileName);
+                    return extractMappingLogic(sampleInput, fileType, fileName, parameters);
                 }
             }
 
             // Clean up the code before returning (Sanitize Regex Flags)
-            if (logic.type === 'parsing_function' && logic.parseFunction) {
-                // Remove invalid flags (s, u, y) from regex literals in the code string
-                // Naive approach: Look for /.../flags pattern. a bit risky on code, but better than crash.
-                // Actually, let's just trust the prompt + try/catch for now. The previous crash was caught by try/catch!
-                // The error logs showed it was caught.
-                // We just want to ensure we don't crash the *recursion*.
+            // LLMs sometimes hallucinate flags like 's' or 'y' in combinations that can fail.
+            // We'll strip anything except the core 'gim' for maximum safety.
+            if (logic.type === 'parsing_function' && logic.parseFunction && typeof logic.parseFunction === 'string') {
+                try {
+                    // 1. Sanitize constructor calls: new RegExp('...', 'flags')
+                    logic.parseFunction = logic.parseFunction.replace(
+                        /new RegExp\s*\(\s*(['"`].*?['"`])\s*,\s*(['"`])([gimsuy]*)(['"`])\s*\)/g,
+                        (match: string, pattern: string, q1: string, flags: string, q2: string) => {
+                            const safeFlags = flags.replace(/[^gim]/g, '');
+                            return `new RegExp(${pattern}, ${q1}${safeFlags}${q2})`;
+                        }
+                    );
+
+                    // 2. Sanitize literals: /pattern/flags (Conservative: only if flags follow a slash at end of a statement/assignment)
+                    logic.parseFunction = logic.parseFunction.replace(
+                        /\/([^\/\n]+)\/([gimsuy]+)(?=[;,\s\n\)])/g,
+                        (match: string, pattern: string, flags: string) => {
+                            const safeFlags = flags.replace(/[^gim]/g, '');
+                            return `/${pattern}/${safeFlags}`;
+                        }
+                    );
+                } catch (e: any) {
+                    logToSystem(`[Logic Extractor] ⚠️ Regex sanitization failed: ${e.message}`, 'WARNING');
+                }
             }
 
             // ... (Saving Template code) ...
@@ -276,46 +331,56 @@ Return JSON: { "type": "field_mapping", "mapping": {"Target": "Source"} }`;
         logToSystem(`[Logic Extractor Debug] Checking Text Mode for type: '${fileType}'`, 'INFO');
 
         if (fileType === 'text' || fileType === 'pdf_text' || fileType === 'pdf' || fileType === 'txt') {
-            const isPDF = fileType === 'pdf_text';
-            // Limit sample size for text (first 3000 chars roughly) or first 50 lines
             logToSystem(`[Logic Extractor] Engaging LLM on Raw Text (PDF/TXT)...`, 'INFO');
 
-            const prompt = `You are a JavaScript Data Extraction Expert.
-            
-OBJECTIVE: Write a JavaScript function to extract structured data from the following Raw Text/PDF content.
-TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
-(Extract any other obvious fields like "Voter ID", "Status", etc. if present).
+            const prompt = `You are an enterprise-grade JavaScript Data Extraction Expert. Write a function to extract structured data from Raw Text/PDF content with MAXIMUM ACCURACY.
+
+Accuracy is MORE IMPORTANT than speed, cost, or brevity.
+
+TARGET SCHEMA: ${targetSchema}
+
+------------------------------------------------
+CORE PARSING RULES
+------------------------------------------------
+1. Accuracy is PARAMOUNT.
+2. You MUST extract EVERY VALID RECORD.
+3. Values MUST remain perfectly aligned (no column shifting).
+4. If a field is missing in the text, return "". NEVER guess.
+
+------------------------------------------------
+RECORD INCLUSION POLICY
+------------------------------------------------
+A row is considered VALID if:
+- It contains a value for at least 2 TARGET PARAMETERS.
+- The values clearly belong to the same logical record.
+
+A row is INVALID if:
+- It contains only a single isolated value (e.g. just a page number).
+- It is a header or footer.
+- It is a summary/total row.
+
+------------------------------------------------
+SEMANTIC MAPPING RULES
+------------------------------------------------
+Detect source columns and map them to the TARGET SCHEMA naturally based on document headers.
+
+------------------------------------------------
+TECHNICAL INSTRUCTIONS
+------------------------------------------------
+1. Write a Javascript function \`parseText(fullText)\` that takes the full string.
+2. It MUST return an Array of Objects.
+3. Handle "smashed" text (missing spaces) using specific field patterns (e.g. Regex for Zip codes, Names).
+4. **REGEX SAFETY**: Use \`new RegExp('pattern', 'flags')\` to avoid syntax errors with slashes.
+5. Use consistent keys exactly as defined in TARGET SCHEMA: ${targetSchema}.
 
 SAMPLE RAW TEXT:
 ${rawTextSample.substring(0, 4000)}
 
-CHALLENGE:
-The text might be "smashed" together (missing spaces between columns) or have irregular spacing due to PDF extraction (e.g. "USV1001James Williams42Male").
-It might also be a "Stream" of text where columns are read top-to-bottom instead of left-to-right.
-
-INSTRUCTIONS:
-1. **PATTERN RECOGNITION**: 
-   - Look for repeating patterns (e.g. dates \d{2}/\d{2}/\d{4}, state codes like "RI", "NY").
-   - Determine if the text is Row-Oriented (standard) or Column-Oriented (stream).
-   - Identify distinct separators (tabs, multiple spaces, specific keywords).
-
-2. **WRITE PARSING LOGIC**:
-   - Write a Javascript function \`parseText(fullText)\` that takes the full string.
-   - It MUST return an **Array of Objects**.
-   - Use flexible Regex or string manipulation.
-   - **HANDLE SMASHED TEXT**: Use Regex lookaheads/lookbehinds or specific field patterns (e.g. \d{5} for Zip) to splitting strings if no spaces exist.
-   - 4. **MISSING DATA**: If a field (like State, Zip, etc.) is not present in the content, return an empty string (\"\"). **NEVER** return comments or explanations like \"// State not provided\".
-   - 5. **CONSISTENCY**: Ensure the returned object consistently has the keys: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer. Use \"\" for missing ones.
-
-3. **REGEX SAFETY**:
-   - Use ONLY standard flags (g, i, m).
-   - **MUST ESCAPE SLASHES** in regex literals (e.g. \\d{2}\\/\\d{2}).
-   - Prefer \`new RegExp()\` constructors for complex patterns to avoid syntax errors.
-
-RETURN JSON:
+RETURN JSON ONLY:
 {
   "type": "parsing_function",
-  "parseFunction": "function(text) { ...your code here... return results; }"
+  "parseFunction": "function(fullText) { ... }",
+  "explanation": "Brief description of the strategy used."
 }`;
 
             tracker.startStep('LLM Logic Extraction (Text)');
@@ -516,13 +581,13 @@ export async function applyLogicToDataset(inputData: any, logic: any, fileName: 
 }
 
 function finishProcessing(records: any[], tracker: PerformanceTracker) {
-    // Group by state
-    tracker.startStep('Group by State');
+    // Group records (Try State, then City, then Category, then default to Records)
+    tracker.startStep('Group Records');
     const grouped: Record<string, any[]> = {};
     records.forEach(record => {
-        const state = record.State || 'Unknown';
-        if (!grouped[state]) grouped[state] = [];
-        grouped[state].push(record);
+        const groupKey = record.State || record.City || record.Category || 'Records';
+        if (!grouped[groupKey]) grouped[groupKey] = [];
+        grouped[groupKey].push(record);
     });
     tracker.endStep({ stateCount: Object.keys(grouped).length });
 

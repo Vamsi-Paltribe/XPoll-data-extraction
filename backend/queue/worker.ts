@@ -162,12 +162,26 @@ export function setupWorker() {
                 }
             }
 
+            const BucketModule = await import('../models/Bucket');
+            // @ts-ignore
+            const BucketModel = BucketModule.default || BucketModule.Bucket;
+
+            // Fetch Bucket for parameters
+            let bucketParams: any[] = [];
+            const bucket = await BucketModel.findById(jobDoc.bucketId);
+            if (bucket) {
+                bucketParams = bucket.parameters || [];
+                console.log(`[Worker] 🛠️ Using ${bucketParams.length} custom bucket parameters for extraction.`);
+            }
+
             const result = await processDocumentWithOpenAI({
                 data: payloadData,
                 type: type,
                 fileName: fileName,
-                additionalPrompt: job.data.userPrompt // Pass the user prompt from job data
+                additionalPrompt: job.data.userPrompt, // Pass the user prompt from job data
+                parameters: bucketParams
             });
+
             console.log(`[Worker] ✅ Processing complete. Result keys: ${Object.keys(result.data).join(', ')}`);
             await job.log(`[Worker] ✅ Processing complete.`);
             await job.updateProgress(80);
@@ -182,8 +196,11 @@ export function setupWorker() {
             if (result.allRecords && Array.isArray(result.allRecords)) {
                 console.log(`[Worker] 🔄 Using preserved file order (${result.allRecords.length} records)`);
                 allRecords = result.allRecords;
+            } else if (Array.isArray(groupedData)) {
+                console.log(`[Worker] 🔄 Result data is already a flat array (${groupedData.length} records)`);
+                allRecords = groupedData;
             } else {
-                console.log(`[Worker] ⚠️ Preserved order missing, flattening grouped data...`);
+                console.log(`[Worker] ⚠️ Flattening grouped data...`);
                 // Flatten grouped data (Legacy / Fallback)
                 Object.keys(groupedData).forEach(groupKey => {
                     const records = groupedData[groupKey];
@@ -203,10 +220,6 @@ export function setupWorker() {
             const UserModule = await import('../models/User');
             // @ts-ignore
             const UserModel = UserModule.default || UserModule.User;
-
-            const BucketModule = await import('../models/Bucket');
-            // @ts-ignore
-            const BucketModel = BucketModule.default || BucketModule.Bucket;
 
             const MAX_BATCH_SIZE = 100;
             let savedCount = 0;
@@ -305,7 +318,8 @@ export function setupWorker() {
                     result: {
                         summary: 'Data stored in Records collection',
                         totalRecords: savedCount,
-                        groups: Object.keys(groupedData)
+                        groups: Object.keys(groupedData),
+                        detectedMapping: result.mapping || {} // Include semantic mapping info
                     },
                     metrics: result.performance,
                     tokensConsumed: currentTokensConsumed + (fullJob.tokensConsumed || 0),

@@ -1,14 +1,16 @@
 
 import { useState, useRef, useEffect, ChangeEvent, KeyboardEvent } from 'react';
-import { Paperclip, XCircle, FileText, Loader2, Sparkles, Bot, ArrowUp, CheckCircle, XOctagon, Clock } from 'lucide-react';
+import { Paperclip, XCircle, FileText, Loader2, Sparkles, Bot, ArrowUp, CheckCircle, XOctagon, Clock, Layers } from 'lucide-react';
 import api from '../services/api';
 import clsx from 'clsx';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
+import ReviewExtractionModal from './ReviewExtractionModal';
 
 interface AIAgentViewProps {
     bucketId?: string;
     userTokens?: number;
+    initialFile?: File | null;
 }
 
 interface Message {
@@ -26,16 +28,47 @@ interface Job {
     result?: any;
     createdAt: string;
     tokensConsumed?: number;
+    error?: string;
 }
 
-const AIAgentView = ({ bucketId, userTokens }: AIAgentViewProps) => {
+const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) => {
     const [messages, setMessages] = useState<Message[]>([]); // Start empty for clean landing page feel
     const [inputValue, setInputValue] = useState('');
     const [stagedFile, setStagedFile] = useState<File | null>(null);
     const [uploading, setUploading] = useState(false);
+    const [dragActive, setDragActive] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const [selectedReviewJob, setSelectedReviewJob] = useState<Job | null>(null);
     const queryClient = useQueryClient();
+
+    useEffect(() => {
+        if (initialFile) {
+            setStagedFile(initialFile);
+        }
+    }, [initialFile]);
+
+    const handleDrag = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.type === "dragenter" || e.type === "dragover") {
+            setDragActive(true);
+        } else if (e.type === "dragleave") {
+            setDragActive(false);
+        }
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setDragActive(false);
+
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            setStagedFile(e.dataTransfer.files[0]);
+        }
+    };
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -65,6 +98,8 @@ const AIAgentView = ({ bucketId, userTokens }: AIAgentViewProps) => {
         refetchInterval: 5000 // Poll every 5s
     });
 
+
+
     const approveMutation = useMutation({
         mutationFn: async (jobId: string) => {
             await api.post(`/jobs/${jobId}/approve`);
@@ -72,6 +107,7 @@ const AIAgentView = ({ bucketId, userTokens }: AIAgentViewProps) => {
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['bucket-jobs', bucketId] });
             queryClient.invalidateQueries({ queryKey: ['user-me'] }); // Refresh tokens
+            setSelectedReviewJob(null);
         }
     });
 
@@ -81,6 +117,7 @@ const AIAgentView = ({ bucketId, userTokens }: AIAgentViewProps) => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['bucket-jobs', bucketId] });
+            setSelectedReviewJob(null);
         }
     });
     // -----------------------
@@ -190,9 +227,28 @@ const AIAgentView = ({ bucketId, userTokens }: AIAgentViewProps) => {
         <div className="flex h-[calc(85dvh-8rem)] w-full relative gap-4">
 
             {/* Main Chat Area */}
-            <div className="flex-1 flex flex-col relative h-full bg-white/50 rounded-3xl border border-white/60 shadow-sm backdrop-blur-xl overflow-hidden">
+            <div
+                onDragEnter={handleDrag}
+                onDragOver={handleDrag}
+                onDragLeave={handleDrag}
+                onDrop={handleDrop}
+                className="flex-1 flex flex-col relative h-full bg-white/50 rounded-3xl border border-white/60 shadow-sm backdrop-blur-xl overflow-hidden"
+            >
                 {/* Ambient Background (Optional) */}
                 <div className="absolute inset-0 bg-gradient-to-tr from-purple-50/50 to-white -z-10" />
+
+                {/* Drag Overlay */}
+                {dragActive && (
+                    <div className="absolute inset-0 z-50 bg-slate-900/40 backdrop-blur-md flex items-center justify-center p-8 animate-in fade-in duration-300">
+                        <div className="w-full max-w-lg bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 p-12 flex flex-col items-center text-center shadow-2xl animate-in zoom-in-95 duration-300">
+                            <div className="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-8">
+                                <Paperclip className="w-10 h-10 text-purple-600 animate-bounce" />
+                            </div>
+                            <h2 className="text-2xl font-black text-slate-900 mb-3 uppercase tracking-tight">Drop files to extract</h2>
+                            <p className="text-slate-400 font-bold uppercase tracking-widest text-[10px]">PDF • CSV • XLSX • IMAGES • TXT</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Chat Area - Centered & Clean */}
                 <div className="flex-1 overflow-y-auto w-full">
@@ -283,7 +339,7 @@ const AIAgentView = ({ bucketId, userTokens }: AIAgentViewProps) => {
 
                             <div className="flex items-end gap-2 p-2">
                                 <label className="p-3 hover:bg-slate-50 rounded-full cursor-pointer transition-colors group/attach self-end mb-1">
-                                    <input type="file" className="hidden" onChange={handleFileSelect} />
+                                    <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
                                     <Paperclip className="w-5 h-5 text-slate-400 group-hover/attach:text-purple-600 transition-colors" />
                                 </label>
 
@@ -361,23 +417,54 @@ const AIAgentView = ({ bucketId, userTokens }: AIAgentViewProps) => {
 
                                 {/* Actions for Waiting Approval */}
                                 {job.status === 'waiting_approval' && (
-                                    <div className="flex gap-2 mt-3 pt-3 border-t border-slate-50">
-                                        <button
-                                            onClick={() => approveMutation.mutate(job._id)}
-                                            disabled={approveMutation.isPending}
-                                            className="flex-1 py-2 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1"
-                                        >
-                                            {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
-                                            Approve
-                                        </button>
-                                        <button
-                                            onClick={() => rejectMutation.mutate(job._id)}
-                                            disabled={rejectMutation.isPending}
-                                            className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1"
-                                        >
-                                            <XOctagon className="w-3 h-3" />
-                                            Reject
-                                        </button>
+                                    <div className="mt-3 space-y-3 pt-3 border-t border-slate-50">
+                                        {/* Semantic Mapping Review */}
+                                        {job.result?.detectedMapping && Object.keys(job.result.detectedMapping).length > 0 && (
+                                            <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100">
+                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
+                                                    <Layers className="w-3 h-3 text-slate-300" />
+                                                    Synonym Match
+                                                </p>
+                                                <div className="space-y-1.5">
+                                                    {Object.entries(job.result.detectedMapping).map(([source, target]: [string, any]) => (
+                                                        <div key={source} className="flex items-center justify-between text-[11px]">
+                                                            <span className="text-slate-500 truncate max-w-[100px]" title={source}>{source}</span>
+                                                            <div className="h-[1px] flex-1 bg-slate-200 mx-2 border-dotted" />
+                                                            <span className="font-bold text-slate-900">{target}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex flex-col gap-2">
+                                            <button
+                                                onClick={() => setSelectedReviewJob(job)}
+                                                className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1"
+                                            >
+                                                <Layers className="w-3 h-3" />
+                                                Review Extracted Data
+                                            </button>
+
+                                            <div className="flex gap-2">
+                                                <button
+                                                    onClick={() => approveMutation.mutate(job._id)}
+                                                    disabled={approveMutation.isPending}
+                                                    className="flex-1 py-2 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1"
+                                                >
+                                                    {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                                                    Approve
+                                                </button>
+                                                <button
+                                                    onClick={() => rejectMutation.mutate(job._id)}
+                                                    disabled={rejectMutation.isPending}
+                                                    className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1"
+                                                >
+                                                    <XOctagon className="w-3 h-3" />
+                                                    Reject
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
                                 )}
 
@@ -401,6 +488,16 @@ const AIAgentView = ({ bucketId, userTokens }: AIAgentViewProps) => {
                     )}
                 </div>
             </div>
+
+            {selectedReviewJob && (
+                <ReviewExtractionModal
+                    job={selectedReviewJob}
+                    onClose={() => setSelectedReviewJob(null)}
+                    onApprove={(id: string) => approveMutation.mutate(id)}
+                    onReject={(id: string) => rejectMutation.mutate(id)}
+                    isProcessing={approveMutation.isPending || rejectMutation.isPending}
+                />
+            )}
         </div>
     );
 };

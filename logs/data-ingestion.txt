@@ -332,3 +332,69 @@ Code: function(text) {
 [2026-01-09T18:18:39.049Z] [INFO] [Logic Extractor] Processing json for logic extraction...
 [2026-01-09T18:18:39.072Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen json 250-recent"
 [2026-01-09T18:18:39.074Z] [INFO] [Logic Applicator] Applying strategy 'field_mapping'...
+[2026-01-10T07:38:36.544Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b80eebd541cd1eff35f36f1c59d2476 (Type: text)
+[2026-01-10T07:38:36.544Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-10T07:38:36.566Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen text excel shee"
+[2026-01-10T07:38:36.568Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-10T07:42:39.711Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 8b80eebd541cd1eff35f36f1c59d2476 (Type: text)
+[2026-01-10T07:42:39.711Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-10T07:42:39.731Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen text excel shee"
+[2026-01-10T07:42:39.733Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-10T11:00:50.471Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 11ce8a31ff1c34f21f01e137d1121d5f (Type: text)
+[2026-01-10T11:00:50.471Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-10T11:00:50.493Z] [INFO] [Logic Extractor Debug] Checking Text Mode for type: 'text'
+[2026-01-10T11:00:50.494Z] [INFO] [Logic Extractor] Engaging LLM on Raw Text (PDF/TXT)...
+[2026-01-10T11:00:59.465Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-10T11:00:59.465Z] [ERROR] [Logic Applicator] ❌ Error compiling generated function: Unexpected identifier 'year'
+Code: function(fullText) { 
+    const records = [];
+    const lines = fullText.split('\n');
+    const recordPattern = new RegExp('^(?<name>.+?)\s+\((?<party>.+?)\)\s+(?<date>\d{2}/\d{2}/\d{4})\s+(?<amount>[\d,\.]+)\s+(?<type>\w+)\s+"(?<employer>.+?)"\s+(?<address>.+?)\s+(?<city>[A-Z ]+)\s+(?<state>[A-Z]{2})\s+(?<zip>\d{5})\s+(?<occupation>.+)$');
+
+    for (const line of lines) {
+        const match = line.match(recordPattern);
+        if (match) {
+            const { name, party, date, amount, type, employer, address, city, state, zip, occupation } = match.groups;
+            records.push({
+                Name: name,
+                Age: '',
+                Contact: '',
+                Address: address,
+                City: city,
+                State: state,
+                Zip: zip,
+                Occupation: occupation,
+                Gender: '',
+                jurisdiction: city,
+                office: type,
+                election year: date,
+                party: party,
+                coosa: '',
+                total contributions: amount
+            });
+        }
+    }
+
+    return records;
+}
+[2026-01-10T11:00:59.491Z] [WARNING] [Logic Extractor] 🗑️ Invalidated/Deleted bad template: 11ce8a31ff1c34f21f01e137d1121d5f
+[2026-01-10T11:03:44.772Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 901b5c96c817631e954d4221ffcc0a40 (Type: text)
+[2026-01-10T11:03:44.772Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-10T11:03:44.792Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen text USA_Voter_"
+[2026-01-10T11:03:44.794Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-10T11:05:24.962Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 901b5c96c817631e954d4221ffcc0a40 (Type: text)
+[2026-01-10T11:05:24.963Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-10T11:05:24.985Z] [SUCCESS] [Logic Extractor] ⚡ MATCH FOUND! Using saved template: "Auto-Gen text USA_Voter_"
+[2026-01-10T11:05:24.987Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-10T13:08:34.760Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 0fcb441c138a6d6109f0bde69112595a (Type: text)
+[2026-01-10T13:08:34.760Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-10T13:08:34.785Z] [INFO] [Logic Extractor Debug] Checking Text Mode for type: 'text'
+[2026-01-10T13:08:34.785Z] [INFO] [Logic Extractor] Engaging LLM on Raw Text (PDF/TXT)...
+[2026-01-10T13:08:45.983Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-10T13:08:46.006Z] [WARNING] [Logic Extractor] 🗑️ Invalidated/Deleted bad template: 0fcb441c138a6d6109f0bde69112595a
+[2026-01-10T13:11:07.048Z] [INFO] [Logic Extractor] 🔍 Generated Data Signature: 0fcb441c138a6d6109f0bde69112595a (Type: text)
+[2026-01-10T13:11:07.048Z] [INFO] [Logic Extractor] Processing text for logic extraction...
+[2026-01-10T13:11:07.067Z] [INFO] [Logic Extractor Debug] Checking Text Mode for type: 'text'
+[2026-01-10T13:11:07.068Z] [INFO] [Logic Extractor] Engaging LLM on Raw Text (PDF/TXT)...
+[2026-01-10T13:11:20.048Z] [INFO] [Logic Applicator] Applying strategy 'parsing_function'...
+[2026-01-10T13:11:20.074Z] [WARNING] [Logic Extractor] 🗑️ Invalidated/Deleted bad template: 0fcb441c138a6d6109f0bde69112595a

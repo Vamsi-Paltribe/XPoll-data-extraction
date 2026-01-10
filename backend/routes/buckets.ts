@@ -10,6 +10,7 @@ import { User } from '../models/User';
 import { TokenLedger } from '../models/TokenLedger';
 import multer from 'multer';
 import { processDocumentWithOpenAI } from '../services/openaiProcessor';
+import { OpenAI } from 'openai';
 
 const router = express.Router();
 
@@ -118,7 +119,8 @@ router.post('/', async (req: AuthRequest, res: Response) => {
     try {
         const newBucket = new Bucket({
             ...req.body,
-            createdBy: req.user.id
+            createdBy: req.user.id,
+            parameters: req.body.parameters || [] // Start empty unless specified
         });
         const saved = await newBucket.save();
         res.json(saved);
@@ -236,12 +238,36 @@ router.post('/:id/sync', async (req: AuthRequest, res: Response) => {
 // Update Bucket Settings (Parameters)
 router.put('/:id/settings', async (req: Request, res: Response) => {
     try {
-        const { parameters } = req.body;
+        const { parameters: userParameters } = req.body;
         const bucket = await Bucket.findById(req.params.id);
         if (!bucket) return res.status(404).json({ msg: 'Bucket not found' });
 
-        // No token deduction for parameters - only charge based on record count during sync
-        bucket.parameters = parameters;
+        const finalParameters = userParameters;
+
+        // Use LLM to "understand" and validate parameter types for NEW custom parameters only
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const enhancedParams = await Promise.all(finalParameters.map(async (p: any) => {
+            // Auto-detect type if not explicitly set or is default 'text'
+            if (p.name && (!p.type || p.type === 'text')) {
+                try {
+                    const response = await openai.chat.completions.create({
+                        model: "gpt-4o-mini",
+                        messages: [
+                            { role: "system", content: "Identify the most likely data type for a field name in a database. Return JSON: { \"type\": \"text\" | \"number\" | \"date\" | \"boolean\" }" },
+                            { role: "user", content: `Field Name: ${p.name}` }
+                        ],
+                        response_format: { type: "json_object" }
+                    });
+                    const result = JSON.parse(response.choices[0].message.content || '{}');
+                    return { ...p, type: result.type || 'text' };
+                } catch (e) {
+                    return p;
+                }
+            }
+            return p;
+        }));
+
+        bucket.parameters = enhancedParams;
         await bucket.save();
         res.json(bucket);
     } catch (err: any) {
@@ -385,7 +411,8 @@ router.post('/:id/upload', upload.single('file'), async (req: AuthRequest, res: 
         const result = await processDocumentWithOpenAI({
             data: req.file.buffer,
             type: fileType,
-            fileName: req.file.originalname
+            fileName: req.file.originalname,
+            parameters: bucket.parameters // Pass bucket parameters for extraction
         });
 
         if (!result.success && !result.data) {
@@ -394,6 +421,15 @@ router.post('/:id/upload', upload.single('file'), async (req: AuthRequest, res: 
 
         const extractedData = result.data; // Grouped by State
 
+        // 1.5. Aggregate unique cities for batch metadata
+        const allCities = new Set<string>();
+        Object.values(extractedData).forEach((records: any) => {
+            records.forEach((r: any) => {
+                const city = r.City || r.city || r.CITY;
+                if (city) allCities.add(city);
+            });
+        });
+
         // 2. Create a new SyncBatch
         const batch = new SyncBatch({
             bucketId: bucket._id,
@@ -401,7 +437,7 @@ router.post('/:id/upload', upload.single('file'), async (req: AuthRequest, res: 
             recordCount: 0,
             filters: {
                 states: Object.keys(extractedData),
-                cities: [] // Could populate if we extract cities
+                cities: Array.from(allCities)
             }
         });
         await batch.save();

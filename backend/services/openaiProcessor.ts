@@ -2,7 +2,6 @@ import OpenAI from 'openai';
 import { extractMappingLogic, applyLogicToDataset, invalidateTemplate, invalidateTemplateByName, ExecutionResult } from './logicExtractor';
 import { parseToon } from '../utils/toonParser';
 import { processPDFToText } from '../utils/pdfTableExtractor';
-import { processImageToToon } from '../utils/imageOCR';
 import PerformanceTracker from '../utils/performanceTracker';
 
 interface ProcessPayload {
@@ -11,6 +10,7 @@ interface ProcessPayload {
     fileName: string;
     skipConfirmation?: boolean;
     additionalPrompt?: string;
+    parameters?: any[]; // Dynamic fields to extract
 }
 
 /**
@@ -18,13 +18,14 @@ interface ProcessPayload {
  * Coordinates: Pre-processing (OCR/PDF extraction) -> Logic Extraction -> Data Application
  */
 export async function processDocumentWithOpenAI(payload: ProcessPayload): Promise<any> {
-    const { data, type, fileName, additionalPrompt, skipConfirmation } = payload;
+    const { data, type, fileName, additionalPrompt, skipConfirmation, parameters = [] } = payload;
     const tracker = new PerformanceTracker(fileName, type);
 
     try {
         let processableData = data;
         let processableType = type;
         let rawPages: string[] = []; // Store pages for fallback
+        let executionResult: ExecutionResult;
 
         // --- PHASE 1: PRE-PROCESSING (Normalize to Text/JSON) ---
         tracker.startStep('Pre-processing');
@@ -43,11 +44,23 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
             }
         }
         else if (type === 'image') {
-            const imageBuffer = Buffer.from(data, 'base64');
-            const result = await processImageToToon(imageBuffer);
-            processableData = result.content;
-            processableType = 'text';
-            console.log(`[OpenAI Processor] 🖼️ Image OCR Complete. Type: ${processableType}`);
+            console.log(`[OpenAI Processor] 👁️ Using Vision LLM for direct image extraction...`);
+            // Determine MIME type from filename or default to image/png
+            const ext = fileName.split('.').pop()?.toLowerCase();
+            const mimeType = ext === 'png' ? 'image/png' : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : 'image/png';
+
+            executionResult = await processImageDirectly(data, fileName, mimeType, parameters);
+
+            if (!executionResult.success) {
+                throw new Error(`Direct Image Extraction Failed: ${executionResult.error}`);
+            }
+
+            // Short-circuit: Return extracted data immediately
+            return {
+                data: executionResult.data,
+                performance: tracker.getReport(),
+                logicTier: 4
+            };
         }
         else if (type === 'toon') {
             if (typeof processableData === 'string' && processableData.startsWith('@SCHEMA|')) {
@@ -68,9 +81,9 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
         console.log(`[OpenAI Processor] 🚀 Sending data to LogicExtractor... (Type: ${processableType})`);
 
         // Pass to Logic Extractor
-        const logicResult = await extractMappingLogic(processableData, processableType, fileName);
+        const logicResult = await extractMappingLogic(processableData, processableType, fileName, parameters);
 
-        let executionResult: ExecutionResult;
+
 
         if (logicResult.success) {
             // Check if we need confirmation (e.g. Low Confidence)
@@ -95,7 +108,7 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
             console.warn(`[OpenAI Processor] ⚠️ Logic Extraction Failed or Incomplete. Attempting Page-by-Page Direct LLM Extraction...`);
 
             if (rawPages.length > 0) {
-                executionResult = await processPagesDirectly(rawPages, fileName);
+                executionResult = await processPagesDirectly(rawPages, fileName, parameters);
             } else {
                 throw new Error(`Logic Extraction Failed: ${logicResult.error}`);
             }
@@ -122,8 +135,8 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
                 // For now, ask user to retry which will trigger fresh analysis.
                 // If rawPages exist, try direct extraction as a last resort before throwing.
                 if (rawPages.length > 0) {
-                    console.log('[OpenAI Processor] 🔄 Template invalidated, retrying with Direct Page-by-Page Extraction...');
-                    executionResult = await processPagesDirectly(rawPages, fileName);
+                    console.log('[OpenAI Processor] �️ Template invalidated, retrying with Direct Page-by-Page Extraction...');
+                    executionResult = await processPagesDirectly(rawPages, fileName, parameters);
                     if (executionResult.success) {
                         // If fallback worked, return success!
                     } else {
@@ -136,7 +149,7 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
                 // Retry with Page-by-Page Fallback if we haven't already
                 if (rawPages.length > 0) {
                     console.log('[OpenAI Processor] 🔄 Retrying with Direct Page-by-Page Extraction...');
-                    executionResult = await processPagesDirectly(rawPages, fileName);
+                    executionResult = await processPagesDirectly(rawPages, fileName, parameters);
                     if (executionResult.success) {
                         // If fallback worked, return success!
                     } else {
@@ -169,11 +182,17 @@ export async function processDocumentWithOpenAI(payload: ProcessPayload): Promis
  * Fallback: Process PDF pages one by one using LLM to extract data directly.
  * SLOW but ROBUST.
  */
-async function processPagesDirectly(pages: string[], fileName: string): Promise<ExecutionResult> {
+async function processPagesDirectly(pages: string[], fileName: string, parameters: any[] = []): Promise<ExecutionResult> {
     console.log(`[OpenAI Processor] 🐢 Starting Slow Fallback: processing ${pages.length} pages individually...`);
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     let allRecords: any[] = [];
     const tracker = new PerformanceTracker(fileName, 'direct-llm-fallback');
+
+    // Build target schema string (STRICT: No fallbacks)
+    const targetSchema = parameters.length > 0
+        ? parameters.map(p => p.name).join(', ')
+        : "Detected fields from document headers";
+
 
     for (let i = 0; i < pages.length; i++) {
         const pageText = pages[i];
@@ -184,20 +203,116 @@ async function processPagesDirectly(pages: string[], fileName: string): Promise<
 
         console.log(`[OpenAI Processor] 🐢 Processing Page ${i + 1}/${pages.length} (Scenario B - Sequential Fallback)...`);
 
-        const prompt = `You are a Data Extractor. Extract structured data from this document page.
-TARGET SCHEMA: Name, City, State, Zip, Address, Phone, Email, Type, Amount, Date, Employer
-(Extract other valid fields if present).
+        const prompt = `You are an enterprise-grade Data Extraction Engine.
 
+Your ONLY responsibility is to extract structured tabular records from untrusted documents (PDF, CSV, XLSX, scanned images, OCR text) with MAXIMUM ACCURACY.
+
+Accuracy is MORE IMPORTANT than:
+- speed
+- cost
+- brevity
+- elegance
+
+If accuracy and cost conflict, ALWAYS choose accuracy.
+
+------------------------------------------------
+CORE RULES (NON-NEGOTIABLE)
+------------------------------------------------
+
+1. You MUST extract EVERY VALID RECORD present in the document.
+2. You MUST NEVER shift values between columns.
+3. You MUST NEVER guess data.
+4. You MUST NEVER hallucinate headers or values.
+5. If a cell is empty in the source, return an empty string "".
+6. Headers and row values must remain PERFECTLY ALIGNED.
+7. Output MUST be valid JSON only.
+
+------------------------------------------------
+USER-DEFINED PARAMETERS (STRICT)
+------------------------------------------------
+
+TARGET PARAMETERS: ${targetSchema}
+
+You MUST:
+- Extract ONLY these parameters
+- Ignore all other fields even if present
+- Preserve data exactly as found (except trimming whitespace)
+
+If a parameter does NOT exist for a row:
+- Use "" (empty string)
+
+You are NOT allowed to:
+- Rename parameters
+- Invent mappings
+- Merge fields
+- Split fields unless explicitly instructed
+
+------------------------------------------------
+ROW EXTRACTION POLICY
+------------------------------------------------
+
+A row is considered VALID if:
+- It contains a value for at least 2 TARGET PARAMETERS
+- The values clearly belong to the same row
+
+A row is INVALID if:
+- It contains only a single isolated value
+- It is a header
+- It is a footer
+- It is a summary or total row
+
+DO NOT SKIP valid rows.
+DO NOT STOP early.
+
+------------------------------------------------
+COLUMN MAPPING RULES
+------------------------------------------------
+
+You MUST map by SEMANTIC MEANING, not position alone.
+
+Detect source columns and map them to the TARGET SCHEMA naturally based on document headers.
+
+If a source column is ambiguous:
+- Leave the target field empty ("")
+- DO NOT guess
+
+------------------------------------------------
+OUTPUT FORMAT (STRICT)
+------------------------------------------------
+
+Return ONLY a JSON object with this shape:
+
+{
+  "data": [
+    {
+      "<parameter_1>": "",
+      "<parameter_2>": "",
+      "<parameter_3>": ""
+    }
+  ],
+  "mapping": {
+    "<source_header>": "<target_parameter>"
+  }
+}
+
+Rules:
+- "data" MUST be an array
+- Each object MUST contain ALL target parameters (${targetSchema})
+- Order of rows MUST match document order
+- mapping MUST reflect actual header matches found
+
+------------------------------------------------
 PAGE CONTENT:
+------------------------------------------------
 ${pageText.substring(0, 15000)}
 
-INSTRUCTIONS:
-1. Return a JSON Object with a "data" key containing an Array of Objects.
-2. If no data found, return { "data": [] }.
-3. Handle "smashed" text carefully.
-4. **CRITICAL**: Return VALID JSON ONLY. No markdown blocks.
+------------------------------------------------
+FINAL RULE
+------------------------------------------------
 
-RETURN JSON ONLY.`;
+Return JSON ONLY.
+No markdown.
+No explanations.`;
 
         try {
             const completion = await openai.chat.completions.create({
@@ -221,13 +336,12 @@ RETURN JSON ONLY.`;
 
     console.log(`[OpenAI Processor] ✅ Direct Extraction Complete. Found ${allRecords.length} records.`);
 
-    // Group by state (reusing logic from LogicExtractor would be cleaner check logicExtractor exports)
-    // For now, inline grouping
+    // Group records (Try State, then City, then Category, then default to Records)
     const grouped: Record<string, any[]> = {};
     allRecords.forEach(record => {
-        const state = record.State || 'Unknown';
-        if (!grouped[state]) grouped[state] = [];
-        grouped[state].push(record);
+        const groupKey = record.State || record.City || record.Category || 'Records';
+        if (!grouped[groupKey]) grouped[groupKey] = [];
+        grouped[groupKey].push(record);
     });
 
     return {
@@ -236,4 +350,211 @@ RETURN JSON ONLY.`;
         recordsProcessed: allRecords.length,
         performance: tracker.getReport() // empty tracker for now
     };
+}
+
+/**
+ * Direct Image-to-Data Extraction using OpenAI Vision
+ */
+async function processImageDirectly(base64Image: string, fileName: string, mimeType: string = 'image/jpeg', parameters: any[] = []): Promise<ExecutionResult> {
+    console.log(`[OpenAI Processor] 👁️ Sending image directly to GPT-4o (Vision)...`);
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const tracker = new PerformanceTracker(fileName, 'vision-direct');
+
+    // Build target schema string (STRICT: No fallbacks)
+    const targetSchema = parameters.length > 0
+        ? parameters.map(p => p.name).join(', ')
+        : "Detected fields from document headers";
+
+
+    const prompt = `You are an enterprise-grade Data Extraction Engine.
+
+Your ONLY responsibility is to extract structured tabular records from untrusted documents (PDF, CSV, XLSX, scanned images, OCR text) with MAXIMUM ACCURACY.
+
+Accuracy is MORE IMPORTANT than:
+- speed
+- cost
+- brevity
+- elegance
+
+If accuracy and cost conflict, ALWAYS choose accuracy.
+
+------------------------------------------------
+CORE RULES (NON-NEGOTIABLE)
+------------------------------------------------
+
+1. You MUST extract EVERY VALID RECORD present in the document.
+2. You MUST NEVER shift values between columns.
+3. You MUST NEVER guess data.
+4. You MUST NEVER hallucinate headers or values.
+5. If a cell is empty in the source, return an empty string "".
+6. Headers and row values must remain PERFECTLY ALIGNED.
+7. Output MUST be valid JSON only.
+
+------------------------------------------------
+USER-DEFINED PARAMETERS (STRICT)
+------------------------------------------------
+
+TARGET PARAMETERS: ${targetSchema}
+
+You MUST:
+- Extract ONLY these parameters
+- Ignore all other fields even if present
+- Preserve data exactly as found (except trimming whitespace)
+
+If a parameter does NOT exist for a row:
+- Use "" (empty string)
+
+You are NOT allowed to:
+- Rename parameters
+- Invent mappings
+- Merge fields
+- Split fields unless explicitly instructed
+
+------------------------------------------------
+DOCUMENT ANALYSIS PHASE (MANDATORY)
+------------------------------------------------
+
+Before extracting records, you MUST internally determine:
+
+1. Is this document tabular?
+2. What are the actual headers?
+3. Where does the FIRST DATA ROW start?
+4. Where does the LAST DATA ROW end?
+5. Are headers repeated across pages?
+6. Do rows span multiple lines?
+
+You MUST correctly detect:
+- Multi-line rows
+- Wrapped text
+- Repeated headers
+- Page breaks
+
+------------------------------------------------
+ROW EXTRACTION POLICY
+------------------------------------------------
+
+A row is considered VALID if:
+- It contains a value for at least 2 TARGET PARAMETERS
+- The values clearly belong to the same row
+
+A row is INVALID if:
+- It contains only a single isolated value
+- It is a header
+- It is a footer
+- It is a summary or total row
+
+DO NOT SKIP valid rows.
+DO NOT STOP early.
+
+------------------------------------------------
+COLUMN MAPPING RULES
+------------------------------------------------
+
+You MUST map by SEMANTIC MEANING, not position alone.
+
+Detect source columns and map them to the TARGET SCHEMA naturally based on document headers.
+
+If a source column is ambiguous:
+- Leave the target field empty ("")
+- DO NOT guess
+
+------------------------------------------------
+OUTPUT FORMAT (STRICT)
+------------------------------------------------
+
+Return ONLY a JSON object with this shape:
+
+{
+  "data": [
+    {
+      "<parameter_1>": "",
+      "<parameter_2>": "",
+      "<parameter_3>": ""
+    }
+  ],
+  "mapping": {
+    "<source_header>": "<target_parameter>"
+  }
+}
+
+Rules:
+- "data" MUST be an array
+- Each object MUST contain ALL target parameters (${targetSchema})
+- Order of rows MUST match document order
+- mapping MUST reflect actual header matches found
+
+------------------------------------------------
+QUALITY CONTROL (CRITICAL)
+------------------------------------------------
+
+Before responding, you MUST internally verify:
+- Every row has correct column alignment
+- No values drifted across parameters
+- No rows were skipped
+- JSON is valid and parseable
+
+If you are uncertain about a value:
+- Leave it empty
+- NEVER guess
+
+------------------------------------------------
+FINAL RULE
+------------------------------------------------
+
+Return JSON ONLY.
+No markdown.
+No explanations.
+No comments.`;
+
+    try {
+        const response = await openai.chat.completions.create({
+            model: "gpt-4o",
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        { type: "text", text: prompt },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: `data:${mimeType}; base64, ${base64Image} `,
+                                detail: "high"
+                            },
+                        },
+                    ],
+                },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0,
+            max_tokens: 4096,
+        });
+
+        const content = response.choices[0].message.content || '{}';
+        const result = JSON.parse(content);
+        const allRecords = result.data || [];
+
+        console.log(`[OpenAI Processor] ✅ Vision Success: Extracted ${allRecords.length} records.`);
+
+        // Group records (Try State, then City, then Category, then default to Records)
+        const grouped: Record<string, any[]> = {};
+        allRecords.forEach((record: any) => {
+            const groupKey = record.State || record.City || record.Category || 'Records';
+            if (!grouped[groupKey]) grouped[groupKey] = [];
+            grouped[groupKey].push(record);
+        });
+
+        return {
+            success: true,
+            data: grouped,
+            recordsProcessed: allRecords.length,
+            performance: tracker.getReport()
+        };
+    } catch (e: any) {
+        console.error(`[OpenAI Processor] ❌ Vision Extraction Failed: `, e.message);
+        return {
+            success: false,
+            error: e.message,
+            performance: tracker.getReport()
+        };
+    }
 }

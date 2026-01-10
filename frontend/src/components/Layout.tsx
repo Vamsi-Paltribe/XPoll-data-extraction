@@ -11,7 +11,6 @@ import {
 } from 'lucide-react';
 
 import { useQuery } from '@tanstack/react-query';
-import NotificationBar from './NotificationBar';
 
 interface LayoutProps {
     children: ReactNode;
@@ -32,9 +31,6 @@ const Layout = ({ children }: LayoutProps) => {
 
     return (
         <div className="flex flex-col min-h-screen bg-background text-slate-900 font-sans">
-            {/* Notification Bar */}
-            <NotificationBar />
-
             {/* Top Navbar */}
             <header className="h-20 bg-white border-b border-slate-200 flex items-center px-12 sticky top-0 z-50">
                 <div className="max-w-full mx-auto w-full flex items-center justify-between">

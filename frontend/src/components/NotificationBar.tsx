@@ -74,7 +74,7 @@ const NotificationBar = () => {
                             >
                                 {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Approve & Commit"}
                             </button>
-                            <Link to={`/bucket/${primaryJob.bucketId}`} className="text-xs underline hover:text-amber-600">
+                            <Link to={`/registry/${primaryJob.bucketId}`} className="text-xs underline hover:text-amber-600">
                                 View Details
                             </Link>
                         </div>
@@ -82,7 +82,7 @@ const NotificationBar = () => {
 
                     {/* View Link for Processing/Completed */}
                     {primaryJob.status !== 'waiting_approval' && (
-                        <Link to={`/bucket/${primaryJob.bucketId}`} className="ml-2 opacity-60 hover:opacity-100 flex items-center gap-0.5">
+                        <Link to={`/registry/${primaryJob.bucketId}`} className="ml-2 opacity-60 hover:opacity-100 flex items-center gap-0.5">
                             View <ChevronRight className="w-3 h-3" />
                         </Link>
                     )}
