@@ -371,6 +371,34 @@ export function setupWorker() {
                 }
 
                 if (!isPaused) {
+                    // --- OPTIMIZATION START: Aggregate Regional Metadata ---
+                    const uniqueStates = new Set<string>();
+                    const uniqueCities = new Set<string>();
+
+                    // 'allRecords' contains the raw source extracted data. 
+                    // We iterate this list to capture every State/City found in the file.
+                    allRecords.forEach((r: any) => {
+                        if (r.State && typeof r.State === 'string') uniqueStates.add(r.State.trim());
+                        if (r.City && typeof r.City === 'string') uniqueCities.add(r.City.trim());
+                    });
+
+                    // Push metadata to Bucket (O(1) lookup for frontend)
+                    if (fullJob.bucketId && fullJob.bucketId !== 'admin') {
+                        try {
+                            // Use $addToSet to ensure uniqueness in the DB array
+                            await BucketModel.findByIdAndUpdate(fullJob.bucketId, {
+                                $addToSet: {
+                                    availableStates: { $each: Array.from(uniqueStates) },
+                                    availableCities: { $each: Array.from(uniqueCities) }
+                                }
+                            });
+                            console.log(`[Worker] 🗺️ Regional Scope Updated: ${uniqueStates.size} States, ${uniqueCities.size} Cities added to Bucket.`);
+                        } catch (metaErr) {
+                            console.warn(`[Worker] ⚠️ Failed to update bucket metadata:`, metaErr);
+                        }
+                    }
+                    // --- OPTIMIZATION END ---
+
                     // Update Job with Result Summary
                     await JobModel.findByIdAndUpdate(jobId, {
                         status: 'waiting_approval',

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { LayoutTemplate, CheckCircle, XCircle, Database, ChevronLeft, ChevronRight, Loader2, Check } from 'lucide-react';
 import { PreviewData } from './types';
+import StateSelector from './StateSelector';
 import api from '../../services/api';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -62,7 +63,8 @@ const PreviewModal: React.FC<PreviewModalProps> = ({
         try {
             // @ts-ignore
             const res = await api.post(`/jobs/${previewData.jobId}/approve`, {
-                extractedData: null // Backend uses Job ID to fetch all records now
+                extractedData: null, // Backend uses Job ID to fetch all records now
+                manualState: fallbackState ? fallbackState.trim() : undefined
             });
 
             if (saveTemplate && templateName) {
@@ -112,45 +114,36 @@ const PreviewModal: React.FC<PreviewModalProps> = ({
                     </div>
                 </div>
 
-                {/* Validtion Warning */}
-                {(() => {
-                    return (
-                        <>
-                            {/* Existing Validation Warning */}
-                            {previewData.preview['Unknown'] && (
-                                <div className="bg-amber-50 px-8 py-3 border-b border-amber-100 flex items-center justify-between">
-                                    <span className="text-xs font-bold text-amber-800 flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-                                        {previewData.preview['Unknown'].length} records require categorization (Missing State)
-                                    </span>
-                                </div>
-                            )}
-                            {error && (
-                                <div className="bg-red-50 px-8 py-3 border-b border-red-100 flex items-center justify-between">
-                                    <span className="text-xs font-bold text-red-800 flex items-center gap-2">
-                                        <XCircle className="w-4 h-4 text-red-500" />
-                                        {error}
-                                    </span>
-                                </div>
-                            )}
-                        </>
-                    );
-                })()}
+                {previewData.preview['Unknown'] && (
+                    <div className="bg-amber-50 px-8 py-3 border-b border-amber-100 flex items-center justify-between">
+                        <span className="text-xs font-bold text-amber-800 flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+                            {previewData.preview['Unknown'].length} records require categorization (Missing State)
+                        </span>
+                    </div>
+                )}
+                {error && (
+                    <div className="bg-red-50 px-8 py-3 border-b border-red-100 flex items-center justify-between">
+                        <span className="text-xs font-bold text-red-800 flex items-center gap-2">
+                            <XCircle className="w-4 h-4 text-red-500" />
+                            {error}
+                        </span>
+                    </div>
+                )}
 
                 {/* Content */}
                 <div className="flex-1 overflow-y-auto p-8 bg-slate-50/50">
                     {/* FALLBACK UI */}
                     {previewData.preview['Unknown'] && (
-                        <div className="mb-8 bg-white p-6 rounded-2xl border border-amber-100 shadow-sm relative overflow-hidden group">
+                        <div className="mb-8 bg-white p-6 rounded-2xl border border-amber-100 shadow-sm relative group">
                             <div className="absolute top-0 left-0 w-1 h-full bg-amber-400"></div>
                             <div className="flex flex-col md:flex-row gap-6 items-end">
                                 <div className="flex-1">
                                     <label className="text-xs font-bold uppercase text-slate-400 mb-2 block tracking-wider">Default State</label>
-                                    <input
+                                    <StateSelector
                                         value={fallbackState}
-                                        onChange={(e) => setFallbackState(e.target.value)}
-                                        placeholder="e.g. California"
-                                        className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 focus:ring-2 focus:ring-amber-500/20 focus:border-amber-400 outline-none"
+                                        onChange={setFallbackState}
+                                        className="w-full"
                                     />
                                 </div>
                                 <div className="flex-1">

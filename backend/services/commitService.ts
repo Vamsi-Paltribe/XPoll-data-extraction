@@ -15,10 +15,11 @@ interface CommitOptions {
     templateName?: string;
     logic?: any;
     signature?: string;
+    defaultState?: string; // Manual override from UI
 }
 
 export const commitDataToRegistry = async (options: CommitOptions) => {
-    const { userId, extractedData, jobId, targetBucketId, saveAsTemplate, templateName, logic, signature } = options;
+    const { userId, extractedData, jobId, targetBucketId, saveAsTemplate, templateName, logic, signature, defaultState } = options;
 
     let totalRecords = 0;
     const statesProcessed = new Set<string>();
@@ -44,7 +45,7 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
 
             // Case A: Targeted Commit (Private Bucket)
             if (targetBucketId && targetBucketId !== 'admin') {
-                await insertRecordsToTargetBucket(targetBucketId, items, userId);
+                await insertRecordsToTargetBucket(targetBucketId, items, userId, defaultState);
             }
             // Case B: Global Commit (State-based)
             else {
@@ -52,6 +53,10 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
                 const byState: Record<string, any[]> = {};
                 items.forEach(item => {
                     const data = item.data;
+                    // Apply default state if missing
+                    if (!data.State && defaultState) {
+                        data.State = defaultState;
+                    }
                     const state = data.State || 'Unknown';
                     if (!byState[state]) byState[state] = [];
                     byState[state].push(data);
@@ -96,7 +101,7 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
             } else if (Array.isArray(extractedData)) {
                 flatRecords = extractedData;
             }
-            await insertRecordsToTargetBucket(targetBucketId, flatRecords, userId);
+            await insertRecordsToTargetBucket(targetBucketId, flatRecords, userId, defaultState);
             totalRecords = flatRecords.length;
         } else {
             const states = Object.keys(extractedData);
@@ -110,7 +115,7 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
         }
     }
 
-    // Save Template if requested
+    // Save Template if requested (Logic omitted for brevity, assumed unchanged)
     if (saveAsTemplate && templateName && logic && signature) {
         try {
             await ParsingTemplate.findOneAndUpdate(
@@ -133,7 +138,7 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
     return {
         success: true,
         totalRecords,
-        states: Array.from(statesProcessed).map(s => ({ name: s, count: 'N/A' })) // Simplified count for scalable mode
+        states: Array.from(statesProcessed).map(s => ({ name: s, count: 'N/A' }))
     };
 };
 
@@ -149,7 +154,7 @@ async function insertRecordsForState(stateName: string, records: any[], userId: 
             name: stateName,
             description: `Master Registry - ${stateName}`,
             type: 'global',
-            createdBy: mongoose.isValidObjectId(userId) ? userId : undefined, // Fix: CastError for "ADMIN_JOB_USER"
+            createdBy: mongoose.isValidObjectId(userId) ? userId : undefined,
             sourceUrl: 'UPLOADED_VIA_ADMIN_DASHBOARD'
         });
         await bucket.save();
@@ -173,16 +178,20 @@ async function insertRecordsForState(stateName: string, records: any[], userId: 
     // 4. Update Metadata
     const existingHeaders = new Set(bucket!.availableHeaders || []);
     const existingCities = new Set(bucket!.availableCities || []);
+    const existingStates = new Set(bucket!.availableStates || []); // Added
 
     records.forEach((rec: any) => {
         Object.keys(rec).forEach(k => {
             if (!k.startsWith('_') && k !== 'bucketId') existingHeaders.add(k);
         });
         if (rec.City) existingCities.add(rec.City);
+        // Note: Global buckets are usually BY state, so availableStates might just be [stateName]
+        existingStates.add(stateName);
     });
 
     bucket!.availableHeaders = Array.from(existingHeaders).sort();
     bucket!.availableCities = Array.from(existingCities).sort();
+    bucket!.availableStates = Array.from(existingStates).sort(); // Added
     bucket!.lastSyncedAt = new Date();
     await bucket!.save();
 }
@@ -190,7 +199,7 @@ async function insertRecordsForState(stateName: string, records: any[], userId: 
 /**
  * Helper: Inserts records into a SPECIFIC target bucket (Private Mode)
  */
-async function insertRecordsToTargetBucket(bucketId: string, records: any[], userId: string) {
+async function insertRecordsToTargetBucket(bucketId: string, records: any[], userId: string, defaultState?: string) {
     // 1. Find Bucket
     if (bucketId === 'admin') {
         console.log(`[Commit Service] 🛡️ Skipping specific bucket lookup for 'admin'. Using Global Registry logic.`);
@@ -204,9 +213,11 @@ async function insertRecordsToTargetBucket(bucketId: string, records: any[], use
 
     // 2. Prepare Docs
     const customerRecords = records.map((record: any) => {
-        // If the record came from RecordModel, it has a 'data' field.
-        // If it's raw extractedData, it's already the data object.
         const rowData = record.data || record;
+        // Inject Default State if missing
+        if (!rowData.State && defaultState) {
+            rowData.State = defaultState;
+        }
 
         return {
             bucketId: bucket._id,
@@ -220,13 +231,13 @@ async function insertRecordsToTargetBucket(bucketId: string, records: any[], use
     try {
         await CustomerRecord.insertMany(customerRecords, { ordered: false });
     } catch (err: any) {
-        // Ignore duplicate errors
         console.warn(`[Commit Service] ⚠️ Batch upload to bucket ${bucketId} had some duplicates/errors: ${err.message}`);
     }
 
     // 4. Update Metadata
     const existingHeaders = new Set(bucket.availableHeaders || []);
     const existingCities = new Set(bucket.availableCities || []);
+    const existingStates = new Set(bucket.availableStates || []);
 
     records.forEach((rec: any) => {
         const rowData = rec.data || rec;
@@ -234,10 +245,12 @@ async function insertRecordsToTargetBucket(bucketId: string, records: any[], use
             if (!k.startsWith('_') && k !== 'bucketId') existingHeaders.add(k);
         });
         if (rowData.City) existingCities.add(rowData.City);
+        if (rowData.State) existingStates.add(rowData.State);
     });
 
     bucket.availableHeaders = Array.from(existingHeaders).sort();
     bucket.availableCities = Array.from(existingCities).sort();
+    bucket.availableStates = Array.from(existingStates).sort();
     bucket.lastSyncedAt = new Date();
     await bucket.save();
     console.log(`[Commit Service] ✅ Successfully committed ${records.length} records to bucket "${bucket.name}"`);

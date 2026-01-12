@@ -108,7 +108,12 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
             queryClient.invalidateQueries({ queryKey: ['bucket-jobs', bucketId] });
             queryClient.invalidateQueries({ queryKey: ['registry-customers', bucketId] });
             queryClient.invalidateQueries({ queryKey: ['user-me'] }); // Refresh tokens
+            queryClient.invalidateQueries({ queryKey: ['jobs'] });
+            toast.success('Job approved and data committed successfully');
             setSelectedReviewJob(null);
+        },
+        onError: (err: any) => {
+            toast.error(err.response?.data?.error || 'Failed to approve job');
         }
     });
 
@@ -494,7 +499,9 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                 <ReviewExtractionModal
                     job={selectedReviewJob}
                     onClose={() => setSelectedReviewJob(null)}
-                    onApprove={(id: string) => approveMutation.mutate(id)}
+                    onApprove={(jobId: string, options?: { manualState?: string }) => {
+                        approveMutation.mutate({ jobId, ...options });
+                    }}
                     onReject={(id: string) => rejectMutation.mutate(id)}
                     isProcessing={approveMutation.isPending || rejectMutation.isPending}
                 />

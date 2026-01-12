@@ -94,6 +94,9 @@ router.get('/users/:userId/buckets', async (req: Request, res: Response) => {
 // Get detailed records for a specific bucket (Admin view)
 router.get('/buckets/:bucketId/records', async (req: Request, res: Response) => {
     try {
+        if (req.params.bucketId === 'admin') {
+            return res.json([]);
+        }
         const records = await CustomerRecord.find({ bucketId: req.params.bucketId }).sort({ updatedAt: -1 });
         res.json(records);
     } catch (err: any) {

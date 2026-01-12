@@ -371,8 +371,9 @@ const ManageData = () => {
                 }))
             }
         });
-        setFallbackState('');
-        setFallbackCity('');
+        // Do NOT clear fallbackState here, as we need it for the API commit payload
+        // setFallbackState(''); 
+        setFallbackCity(''); // City is fine to clear as it's injected into records
     }, [previewData, fallbackState, fallbackCity, setPreviewData, setFallbackState, setFallbackCity]);
 
     return (

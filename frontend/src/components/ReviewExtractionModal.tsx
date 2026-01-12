@@ -6,11 +6,12 @@ import {
 } from 'lucide-react';
 import api from '../services/api';
 import { useQuery } from '@tanstack/react-query';
+import StateSelector from './StateSelector';
 
 interface ReviewExtractionModalProps {
     job: any;
     onClose: () => void;
-    onApprove: (jobId: string) => void;
+    onApprove: (jobId: string, options?: { manualState?: string }) => void;
     onReject: (jobId: string) => void;
     isProcessing: boolean;
 }
@@ -23,6 +24,7 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
     isProcessing
 }) => {
     const [page, setPage] = useState(1);
+    const [manualState, setManualState] = useState('');
     const limit = 15;
 
     const { data, isLoading } = useQuery({
@@ -184,6 +186,14 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
 
                     {/* Actions */}
                     <div className="flex items-center gap-3">
+                        <div className="w-[200px]">
+                            <StateSelector
+                                value={manualState}
+                                onChange={setManualState}
+                                className="w-full"
+                            />
+                        </div>
+
                         <button
                             onClick={() => onReject(job._id)}
                             disabled={isProcessing}
@@ -192,7 +202,9 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
                             Reject Job
                         </button>
                         <button
-                            onClick={() => onApprove(job._id)}
+                            onClick={() => {
+                                onApprove(job._id, manualState ? { manualState } : undefined);
+                            }}
                             disabled={isProcessing}
                             className="px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-2xl shadow-xl shadow-slate-900/10 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
                         >

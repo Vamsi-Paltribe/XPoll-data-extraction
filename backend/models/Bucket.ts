@@ -32,6 +32,7 @@ export interface IBucket extends Document {
     };
     parameters: IParameter[];
     availableHeaders: string[];
+    availableStates: string[];
     availableCities: string[];
     createdAt: Date;
     updatedAt: Date;
@@ -81,6 +82,7 @@ const BucketSchema = new Schema({
 
     // Auto-Discovered Metadata (Cached for O(1) Access)
     availableHeaders: { type: [String], default: [] },
+    availableStates: { type: [String], default: [] },
     availableCities: { type: [String], default: [] }
 }, { timestamps: true });
 

@@ -147,6 +147,11 @@ router.get('/:id', async (req: Request, res: Response) => {
 router.put('/:id', async (req: AuthRequest, res: Response) => {
     try {
         const { name, description, sourceUrl } = req.body;
+
+        if (req.params.id === 'admin') {
+            return res.json({ _id: 'admin', name: 'Global Admin', type: 'global', parameters: [], description: description || 'Virtual Bucket' });
+        }
+
         const bucket = await Bucket.findById(req.params.id);
         if (!bucket) return res.status(404).json({ msg: 'Bucket not found' });
 
@@ -249,6 +254,11 @@ router.post('/:id/sync', async (req: AuthRequest, res: Response) => {
 router.put('/:id/settings', async (req: Request, res: Response) => {
     try {
         const { parameters: userParameters } = req.body;
+
+        if (req.params.id === 'admin') {
+            return res.json({ _id: 'admin', name: 'Global Admin', type: 'global', parameters: userParameters || [] });
+        }
+
         const bucket = await Bucket.findById(req.params.id);
         if (!bucket) return res.status(404).json({ msg: 'Bucket not found' });
 

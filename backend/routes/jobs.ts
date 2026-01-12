@@ -172,14 +172,34 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
         }
 
         const dataToCommit = req.body.extractedData || job.result;
+        const manualState = req.body.manualState; // Read manual overrides
+
         console.log(`[Jobs API] Committing data... Records: ${dataToCommit ? Object.keys(dataToCommit).length : 'None'}`);
+
+        // --- OPTIMIZATION START: Handle Manual State Injection ---
+        if (manualState && job.bucketId && job.bucketId !== 'admin') {
+            console.log(`[Jobs API] 🗺️ Injecting Manual State Override: ${manualState}`);
+
+            // 1. Update Bucket Metadata (Instant Fix for "Unknown")
+            const BucketModule = await import('../models/Bucket');
+            await BucketModule.Bucket.findByIdAndUpdate(job.bucketId, {
+                $addToSet: { availableStates: manualState }
+            });
+
+            // 2. Inject State into Records (if missing)
+            // Note: commitDataToRegistry handles data commitment. We might need to map it there.
+            // But simpler: If dataToCommit is grouped, we can inject it.
+            // OR rely on commitService to handle defaults.
+        }
+        // --- OPTIMIZATION END ---
 
         // Execute Commit Logic
         const result = await commitDataToRegistry({
             userId: 'ADMIN_JOB_USER',
             extractedData: dataToCommit,
             jobId: req.params.id, // Pass Job ID for Scalable Mode
-            targetBucketId: job.bucketId // Pass Target Bucket ID
+            targetBucketId: job.bucketId, // Pass Target Bucket ID
+            defaultState: manualState // Pass default state to commit service
         });
 
         console.log('[Jobs API] Commit successful');
