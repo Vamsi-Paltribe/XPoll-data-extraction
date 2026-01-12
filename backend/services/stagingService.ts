@@ -167,8 +167,11 @@ export const syncToStaging = async (bucketId: string, filters: FetchFilters) => 
     const existing = await CustomerRecord.find({ bucketId });
     existing.forEach(r => customerRecordsMap.set(r.keyHash, r.data));
 
-    const bucket = await Bucket.findById(bucketId);
-    const bucketParams = bucket?.parameters?.map(p => p.name) || [];
+    let bucketParams: string[] = [];
+    if (bucketId !== 'admin') {
+        const bucket = await Bucket.findById(bucketId);
+        bucketParams = bucket?.parameters?.map(p => p.name) || [];
+    }
 
     let conflictCount = 0;
 

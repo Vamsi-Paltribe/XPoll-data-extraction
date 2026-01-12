@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 import { useNavigate } from 'react-router-dom';
 import {
-    Shield, LogOut, Database, LayoutGrid, Wallet, UserPlus, Clock, XCircle, FileText, CheckCircle, BellDot
+    Shield, LogOut, Database, LayoutGrid, Wallet, UserPlus, Clock, XCircle, FileText, CheckCircle, BellDot, Settings
 } from 'lucide-react';
 import clsx from 'clsx';
 
@@ -89,6 +89,7 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({ children }) => {
                             <NavLink to="/manage" icon={<Database className="w-4 h-4" />} label="Manage Sheets" />
                             <NavLink to="/ledger" icon={<Wallet className="w-4 h-4" />} label="Financial Ledger" />
                             <NavLink to="/create-admin" icon={<UserPlus className="w-4 h-4" />} label="Add Admin" />
+                            <NavLink to="/settings" icon={<Settings className="w-4 h-4" />} label="Global Schema" />
                         </nav>
                     </div>
 

@@ -45,20 +45,6 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
         return () => window.removeEventListener('keydown', handleEsc);
     }, [onClose]);
 
-    const scrollerRef1 = React.useRef<HTMLDivElement>(null);
-    const scrollerRef2 = React.useRef<HTMLDivElement>(null);
-
-    const handleScroll1 = () => {
-        if (scrollerRef1.current && scrollerRef2.current) {
-            scrollerRef2.current.scrollLeft = scrollerRef1.current.scrollLeft;
-        }
-    };
-
-    const handleScroll2 = () => {
-        if (scrollerRef1.current && scrollerRef2.current) {
-            scrollerRef1.current.scrollLeft = scrollerRef2.current.scrollLeft;
-        }
-    };
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -110,10 +96,10 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
 
                 {/* Content Area */}
                 <div className="flex-1 flex flex-col min-h-0 bg-white">
-                    {/* Semantic Mapping Summary Overlay (Mini) */}
+                    {/* Schema Mapping Summary Overlay (Mini) */}
                     {job.result?.detectedMapping && Object.keys(job.result.detectedMapping).length > 0 && (
-                        <div className="px-8 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-6 overflow-x-auto no-scrollbar">
-                            <span className="text-[10px] font-black text-slate-300 uppercase tracking-widest whitespace-nowrap px-2">Synonym Matches:</span>
+                        <div className="px-8 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-6 overflow-x-auto no-scrollbar shrink-0">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap px-2">Active Mapping:</span>
                             {Object.entries(job.result.detectedMapping).map(([source, target]: [string, any]) => (
                                 <div key={source} className="flex items-center gap-2 px-3 py-1 bg-white rounded-lg border border-slate-200 shadow-sm whitespace-nowrap">
                                     <span className="text-[10px] text-slate-400 italic font-medium">{source}</span>
@@ -121,17 +107,6 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
                                     <span className="text-[10px] font-bold text-slate-700">{target}</span>
                                 </div>
                             ))}
-                        </div>
-                    )}
-
-                    {/* TOP FIXED SCROLLER */}
-                    {!isLoading && records.length > 0 && (
-                        <div
-                            ref={scrollerRef1}
-                            onScroll={handleScroll1}
-                            className="overflow-x-auto overflow-y-hidden h-3 bg-slate-50 border-b border-slate-100 custom-scrollbar mx-8 mt-4 rounded-full"
-                        >
-                            <div style={{ width: `${Object.keys(records[0].data).length * 200}px`, height: '1px' }} />
                         </div>
                     )}
 
@@ -149,13 +124,11 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
                             </div>
                         ) : (
                             <div
-                                ref={scrollerRef2}
-                                onScroll={handleScroll2}
                                 className="flex-1 overflow-auto rounded-2xl border border-slate-200 shadow-sm custom-scrollbar bg-white"
                             >
                                 <table className="w-full text-left text-sm border-separate border-spacing-0">
-                                    <thead className="sticky top-0 z-10">
-                                        <tr className="bg-slate-50/90 backdrop-blur-sm shadow-sm">
+                                    <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
+                                        <tr>
                                             {Object.keys(records[0].data).map(key => (
                                                 <th key={key} className="px-6 py-4 font-black text-slate-400 uppercase tracking-widest text-[9px] border-b border-slate-100 whitespace-nowrap min-w-[200px]">
                                                     {key}

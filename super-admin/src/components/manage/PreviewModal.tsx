@@ -114,37 +114,8 @@ const PreviewModal: React.FC<PreviewModalProps> = ({
 
                 {/* Validtion Warning */}
                 {(() => {
-                    const standardSchema = ['Name', 'City', 'State', 'Zip', 'Address', 'Phone', 'Email', 'Type', 'Amount', 'Date', 'Employer'];
-                    // Collect all keys from the first record of any state
-                    const allKeys = new Set<string>();
-                    previewData.summary.states.forEach((s: any) => {
-                        if (s.sampleRecords[0]) {
-                            Object.keys(s.sampleRecords[0]).forEach(k => allKeys.add(k));
-                        }
-                    });
-
-                    // Find new keys
-                    const newParameters = Array.from(allKeys).filter(k =>
-                        !standardSchema.some(s => s.toLowerCase() === k.toLowerCase()) &&
-                        k !== '_id' && k !== 'jobId'
-                    );
-
                     return (
                         <>
-                            {/* New Parameters Alert */}
-                            {newParameters.length > 0 && (
-                                <div className="bg-purple-50 px-8 py-3 border-b border-purple-100 flex items-center justify-between">
-                                    <span className="text-xs font-bold text-purple-700 flex items-center gap-2">
-                                        <span className="relative flex h-2 w-2">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
-                                        </span>
-                                        New Parameters Detected: {newParameters.join(', ')}
-                                    </span>
-                                    <span className="text-[10px] font-bold text-purple-400 uppercase tracking-wider">Will be added to schema</span>
-                                </div>
-                            )}
-
                             {/* Existing Validation Warning */}
                             {previewData.preview['Unknown'] && (
                                 <div className="bg-amber-50 px-8 py-3 border-b border-amber-100 flex items-center justify-between">
@@ -204,7 +175,7 @@ const PreviewModal: React.FC<PreviewModalProps> = ({
                     {/* DATA PREVIEW */}
                     <div className="grid gap-8">
                         {previewData.summary.states.map((state) => (
-                            <div key={state.name} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+                            <div key={state.name} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col max-h-[600px]">
                                 <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/30 flex justify-between items-center shrink-0">
                                     <h3 className="font-bold text-slate-900 flex items-center gap-2">
                                         {state.name === 'Unknown' ? <XCircle className="w-5 h-5 text-red-500" /> : <Database className="w-4 h-4 text-slate-400" />}
@@ -212,20 +183,20 @@ const PreviewModal: React.FC<PreviewModalProps> = ({
                                     </h3>
                                     <span className="text-xs font-mono font-medium text-slate-400">{state.recordCount} records</span>
                                 </div>
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-left text-sm">
-                                        <thead className="bg-white text-xs font-bold text-slate-500 uppercase tracking-wider border-b border-slate-100">
+                                <div className="overflow-auto flex-1 scrollbar-thin scrollbar-thumb-slate-200">
+                                    <table className="w-full text-left text-sm border-separate border-spacing-0">
+                                        <thead className="sticky top-0 bg-white z-10 shadow-[0_1px_rgba(0,0,0,0.05)]">
                                             <tr>
                                                 {state.sampleRecords[0] && Object.keys(state.sampleRecords[0]).map(k => (
-                                                    <th key={k} className="px-6 py-3 whitespace-nowrap">{k}</th>
+                                                    <th key={k} className="px-6 py-4 whitespace-nowrap bg-white border-b border-slate-100 text-xs font-bold text-slate-500 uppercase tracking-wider">{k}</th>
                                                 ))}
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-50">
                                             {state.sampleRecords.map((r, i) => (
-                                                <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                <tr key={i} className="hover:bg-slate-50/50 transition-colors">
                                                     {Object.values(r).map((v, j) => (
-                                                        <td key={j} className="px-6 py-3 text-slate-600 max-w-[200px] truncate">
+                                                        <td key={j} className="px-6 py-3 text-slate-600 max-w-[300px] truncate border-b border-slate-50">
                                                             {typeof v === 'object' ? JSON.stringify(v) : (v as React.ReactNode) || '-'}
                                                         </td>
                                                     ))}

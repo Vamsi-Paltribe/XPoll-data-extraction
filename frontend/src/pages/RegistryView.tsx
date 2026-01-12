@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../services/api';
 import clsx from 'clsx';
@@ -98,24 +98,6 @@ const RegistryView = () => {
     const [newParameter, setNewParameter] = useState({ name: '', type: 'text', mapping: '' });
     const [dragActive, setDragActive] = useState(false);
     const [droppedFile, setDroppedFile] = useState<File | null>(null);
-    // More Scrolling Refs for Logs
-    const logScrollerRef1 = useRef<HTMLDivElement>(null);
-    const logScrollerRef2 = useRef<HTMLDivElement>(null);
-    // Scrolling Refs
-    const scrollerRef1 = useRef<HTMLDivElement>(null);
-    const scrollerRef2 = useRef<HTMLDivElement>(null);
-
-    const handleScroll1 = () => {
-        if (scrollerRef1.current && scrollerRef2.current) {
-            scrollerRef2.current.scrollLeft = scrollerRef1.current.scrollLeft;
-        }
-    };
-
-    const handleScroll2 = () => {
-        if (scrollerRef1.current && scrollerRef2.current) {
-            scrollerRef1.current.scrollLeft = scrollerRef2.current.scrollLeft;
-        }
-    };
 
     const handleDrag = (e: React.DragEvent) => {
         e.preventDefault();
@@ -133,7 +115,7 @@ const RegistryView = () => {
         setDragActive(false);
 
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            setDroppedFile(e.dataTransfer.files[0]);
+            handleFileDrop(e.dataTransfer.files[0]);
             setActiveTab('agent');
         }
     };
@@ -146,6 +128,15 @@ const RegistryView = () => {
             return res.data as Registry;
         }
     });
+
+    const handleFileDrop = async (file: File) => {
+        if (!registry?.parameters || registry.parameters.length === 0) {
+            window.alert('⚠️ Extraction Failed: No parameters defined for this registry. Please add the variables you want to extract in the "Parameters" tab first.');
+            setDroppedFile(null);
+            return;
+        }
+        setDroppedFile(file);
+    };
 
     const { data: customerRecords = [] } = useQuery({
         queryKey: ['registry-customers', id],
@@ -276,20 +267,6 @@ const RegistryView = () => {
         return [...paramResult, ...discovered];
     };
 
-
-
-    const handleLogScroll1 = () => {
-        if (logScrollerRef1.current && logScrollerRef2.current) {
-            logScrollerRef2.current.scrollLeft = logScrollerRef1.current.scrollLeft;
-        }
-    };
-
-    const handleLogScroll2 = () => {
-        if (logScrollerRef1.current && logScrollerRef2.current) {
-            logScrollerRef1.current.scrollLeft = logScrollerRef2.current.scrollLeft;
-        }
-    };
-
     const renderSyncLogs = () => (
         <div className="mt-12 space-y-6">
             <div className="flex items-center justify-between px-8">
@@ -301,22 +278,11 @@ const RegistryView = () => {
             </div>
 
             <div className="mx-8 space-y-4">
-                {/* TOP FIXED SCROLLER */}
                 <div
-                    ref={logScrollerRef1}
-                    onScroll={handleLogScroll1}
-                    className="overflow-x-auto overflow-y-hidden h-2 bg-slate-50/50 rounded-full custom-scrollbar"
-                >
-                    <div style={{ width: '1200px', height: '1px' }} />
-                </div>
-
-                <div
-                    ref={logScrollerRef2}
-                    onScroll={handleLogScroll2}
-                    className="bg-white rounded-[1.5rem] border border-slate-200 overflow-auto shadow-sm custom-scrollbar max-h-[400px]"
+                    className="bg-white rounded-[1.5rem] border border-slate-200 overflow-auto shadow-sm custom-scrollbar max-h-[500px]"
                 >
                     <table className="w-full text-left border-separate border-spacing-0">
-                        <thead className="sticky top-0 z-10 bg-slate-50/90 backdrop-blur-sm">
+                        <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                             <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                 <th className="p-5 px-6 border-b border-slate-200 min-w-[200px]">Timestamp</th>
                                 <th className="p-5 px-6 border-b border-slate-200 min-w-[150px]">Sequence ID</th>
@@ -415,22 +381,11 @@ const RegistryView = () => {
                     `}
                 </style>
 
-                {/* TOP FIXED SCROLLER */}
                 <div
-                    ref={scrollerRef1}
-                    onScroll={handleScroll1}
-                    className="overflow-x-auto overflow-y-hidden h-2 bg-slate-50/50 rounded-full custom-scrollbar"
-                >
-                    <div style={{ width: `${columns.length * 200}px`, height: '1px' }} />
-                </div>
-
-                <div
-                    ref={scrollerRef2}
-                    onScroll={handleScroll2}
                     className="bg-white rounded-[1.5rem] border border-slate-200 overflow-auto shadow-sm custom-scrollbar max-h-[600px]"
                 >
                     <table className="w-full text-left border-separate border-spacing-0">
-                        <thead className="sticky top-0 z-10 bg-slate-50/90 backdrop-blur-sm">
+                        <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
                             <tr className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
                                 {isStaging && <th className="p-5 px-6 border-b border-slate-200">Validation</th>}
                                 {columns.map(col => <th key={col} className="p-5 px-6 whitespace-nowrap border-b border-slate-200 min-w-[200px]">{col}</th>)}

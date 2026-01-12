@@ -7,6 +7,7 @@ import UserDetail from './pages/UserDetail';
 import ManageData from './pages/ManageData';
 import AdminLayout from './components/AdminLayout';
 import CreateAdmin from './pages/CreateAdmin';
+import GlobalSettings from './pages/GlobalSettings';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +45,10 @@ function App() {
           <Route
             path="/create-admin"
             element={isAuthenticated ? <AdminLayout><CreateAdmin /></AdminLayout> : <Navigate to="/login" />}
+          />
+          <Route
+            path="/settings"
+            element={isAuthenticated ? <AdminLayout><GlobalSettings /></AdminLayout> : <Navigate to="/login" />}
           />
         </Routes>
       </Router>

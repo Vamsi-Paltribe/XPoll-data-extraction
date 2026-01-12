@@ -246,30 +246,11 @@ RETURN JSON ONLY:
   "instructions": "Ensure results follow the target schema."
 }`;
             } else {
-                prompt = `You are an enterprise-grade Data Mapping Expert.
-Map the following source fields to the TARGET SCHEMA with MAXIMUM ACCURACY.
-
-Accuracy is MORE IMPORTANT than speed, cost, or brevity.
-
-TARGET SCHEMA: ${targetSchema}
-
-------------------------------------------------
-SEMANTIC RULES
-------------------------------------------------
-- Map source data to the TARGET SCHEMA naturally based on document headers.
-- If a target field has no equivalent, map it to null.
-- If multiple source fields could fit, choose the one that matches the schema most closely.
-
-SAMPLE RECORDS:
-${JSON.stringify(uniqueSample.slice(0, 5), null, 2)}
-
-RETURN JSON ONLY:
-{
-  "type": "field_mapping",
-  "mapping": {
-    "TargetParameter": "SourceField"
-  }
-}`;
+                // Use the STRICT prompt from prompts.ts
+                prompt = PROMPTS.EXTRACTOR_FIELD_MAPPING(
+                    targetSchema,
+                    JSON.stringify(uniqueSample.slice(0, 5), null, 2)
+                );
             }
 
             tracker.startStep('LLM Logic Extraction (JSON)');
@@ -604,7 +585,7 @@ function generateSignature(data: any, type: string, parameters: any[] = []) {
     // If Text: Hash first 500 chars + Type + Parameters
     if (typeof data === 'string') {
         const snippet = data.substring(0, 500);
-        return crypto.createHash('md5').update(type + snippet + paramString).digest('hex');
+        return crypto.createHash('md5').update(type + snippet + paramString + 'v3-user-prompt').digest('hex');
     }
 
     // If Array
@@ -613,15 +594,15 @@ function generateSignature(data: any, type: string, parameters: any[] = []) {
         // Text Lines (Array of strings)
         if (typeof firstRow === 'string') {
             const snippet = data.slice(0, 10).join('\n').substring(0, 500);
-            return crypto.createHash('md5').update(type + snippet + paramString).digest('hex');
+            return crypto.createHash('md5').update(type + snippet + paramString + 'v3-user-prompt').digest('hex');
         }
         // JSON Objects
         if (typeof firstRow === 'object' && firstRow !== null) {
             const keys = Object.keys(firstRow).sort();
             const keyString = keys.join('|');
-            return crypto.createHash('md5').update(type + keyString + paramString).digest('hex');
+            return crypto.createHash('md5').update(type + keyString + paramString + 'v3-user-prompt').digest('hex');
         }
     }
     // Fallback
-    return crypto.createHash('md5').update(type + 'unknown' + paramString).digest('hex');
+    return crypto.createHash('md5').update(type + 'unknown' + paramString + 'v3-user-prompt').digest('hex');
 }

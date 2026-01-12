@@ -166,12 +166,38 @@ export function setupWorker() {
             // @ts-ignore
             const BucketModel = BucketModule.default || BucketModule.Bucket;
 
+            const GlobalSettingsModule = await import('../models/GlobalSettings');
+            const GlobalSettingsModel = GlobalSettingsModule.GlobalSettings;
+
             // Fetch Bucket for parameters
             let bucketParams: any[] = [];
-            const bucket = await BucketModel.findById(jobDoc.bucketId);
-            if (bucket) {
-                bucketParams = bucket.parameters || [];
-                console.log(`[Worker] 🛠️ Using ${bucketParams.length} custom bucket parameters for extraction.`);
+            if (jobDoc.bucketId && jobDoc.bucketId !== 'admin') {
+                const bucket = await BucketModel.findById(jobDoc.bucketId);
+                if (bucket) {
+                    bucketParams = bucket.parameters || [];
+                    console.log(`[Worker] 🛠️ Using ${bucketParams.length} custom bucket parameters for extraction.`);
+                }
+            } else {
+                console.log(`[Worker] 🛡️ Admin/Global Job. Fetching global schema parameters...`);
+                const globalSchema = await GlobalSettingsModel.findOne({ key: 'global_schema' });
+                if (globalSchema && Array.isArray(globalSchema.value)) {
+                    bucketParams = globalSchema.value;
+                    console.log(`[Worker] 🛠️ Using ${bucketParams.length} global schema parameters.`);
+                }
+            }
+
+            // --- VALIDATION: Ensure parameters exist before calling AI ---
+            if (!bucketParams || bucketParams.length === 0) {
+                const errorMsg = "Extraction Failed: No parameters/variables defined for extraction. Please add schema mapping before taking data in UI.";
+                console.warn(`[Worker] ❌ ${errorMsg}`);
+                await job.log(`[Worker] ❌ ${errorMsg}`);
+
+                await jobDoc.updateOne({
+                    status: 'failed',
+                    error: errorMsg,
+                    finishedAt: new Date()
+                });
+                return;
             }
 
             const result = await processDocumentWithOpenAI({
@@ -230,6 +256,23 @@ export function setupWorker() {
                 await jobDoc.updateOne({ status: 'failed', error: `Data Prep Failed: ${prepError.message}` });
                 return;
             }
+
+            // --- STRICT FILTERING: Keep only defined parameters + State/City ---
+            console.log(`[Worker] 🧹 Filtering ${allRecords.length} records by schema parameters...`);
+            const allowedKeys = new Set([
+                ...bucketParams.map(p => (typeof p === 'string' ? p : p.name).toLowerCase()),
+                'state', 'city' // Always allowed for system logic
+            ]);
+
+            allRecords = allRecords.map(record => {
+                const filteredRecord: any = {};
+                Object.keys(record).forEach(key => {
+                    if (allowedKeys.has(key.toLowerCase())) {
+                        filteredRecord[key] = record[key];
+                    }
+                });
+                return filteredRecord;
+            });
 
             console.log(`[Worker] 📊 Total Records Generated: ${allRecords.length}`);
 

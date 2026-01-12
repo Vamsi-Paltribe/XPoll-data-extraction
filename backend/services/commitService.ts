@@ -192,6 +192,10 @@ async function insertRecordsForState(stateName: string, records: any[], userId: 
  */
 async function insertRecordsToTargetBucket(bucketId: string, records: any[], userId: string) {
     // 1. Find Bucket
+    if (bucketId === 'admin') {
+        console.log(`[Commit Service] 🛡️ Skipping specific bucket lookup for 'admin'. Using Global Registry logic.`);
+        return;
+    }
     const bucket = await Bucket.findById(bucketId);
     if (!bucket) {
         console.error(`[Commit Service] ❌ Target Bucket NOT FOUND: ${bucketId}`);

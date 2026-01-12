@@ -155,7 +155,25 @@ const ManageData = () => {
         return null;
     };
 
+    const { data: globalSchema } = useQuery({
+        queryKey: ['global-schema'],
+        queryFn: async () => {
+            const res = await api.get('/admin/settings/global_schema');
+            return res.data || [];
+        }
+    });
+
     const processFile = async (file: File) => {
+        // Validation: Check if global parameters are defined
+        if (!globalSchema || globalSchema.length === 0) {
+            setChatHistory(prev => [...prev, {
+                type: 'system',
+                isError: true,
+                content: '⚠️ Extraction Blocked: No global parameters/variables defined. Please go to "Global Schema" and add the variables you want to extract first.'
+            }]);
+            return;
+        }
+
         const processingMsg: ChatMessage = {
             type: 'system',
             isProcessing: true,
@@ -315,7 +333,7 @@ const ManageData = () => {
             }
         } else if (inputValue.trim()) {
             setTimeout(() => {
-                setChatHistory(prev => [...prev, { type: 'system', content: "I see your message, but I currently only process files. Please attach a document!" }]);
+                setChatHistory(prev => [...prev, { type: 'system', content: "I currently only process files. Please attach a document!" }]);
             }, 500);
         }
     }, [inputValue, stagedFiles, setChatHistory, setInputValue, setStagedFiles, processFile]);

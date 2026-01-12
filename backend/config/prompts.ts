@@ -16,12 +16,45 @@ Return JSON: { "isValid": boolean, "reason": string }`,
 TARGET SCHEMA: { ${targetSchema} }
 SAMPLE DATA: ${sampleData}
 
-RULES:
-1. LITERAL MATCH PRIORITY: If a source field name exactly matches a target parameter, you MUST use that match.
-2. SPELLING & TYPO TOLERANCE: You MAY use semantic reasoning for obvious spelling mistakes, casing differences, or near-identical names (e.g., 'voterid' vs 'Voter ID', 'first nm' vs 'First Name').
-3. NO BROAD SYNONYMS: Strictly FORBIDDEN from mapping different semantic terms even if they share keywords (e.g., do NOT map 'Primary Ref' to 'Ref' or 'Voter Serial' to 'Voter ID').
-4. UNIQUE ASSIGNMENT: Map each source value to the SINGLE best target parameter.
-5. Return JSON: { "type": "field_mapping", "mapping": { "target": "source" } }`,
+================================================
+MAPPING HIERARCHY (STRICT)
+================================================
+1. USER OVERRIDE (MAX PRIORITY): If the user explicitly provided custom instructions (e.g., "Full Name is Name"), you MUST follow them, even if it contradicts other rules.
+2. LITERAL MATCH: If a source field exactly matches a target parameter, use it.
+3. HEADER-FIRST SEMANTIC SAFETY (CRITICAL):
+
+   You MUST follow this EXACT evaluation order for EVERY source field:
+
+   STEP A — HEADER SEMANTIC CLASSIFICATION (MANDATORY)
+   - Classify the SOURCE HEADER ONLY (ignore the value completely).
+   - Assign ONE immutable class:
+     [PersonName, OrganizationName, Address, Identifier, Date, Unknown]
+   - This classification is FINAL.
+
+   STEP B — TARGET COMPATIBILITY CHECK
+   - Each TARGET FIELD has an allowed semantic class.
+   - Mapping is allowed ONLY if:
+     SOURCE_HEADER_CLASS == TARGET_FIELD_CLASS
+
+   STEP C — VALUE FORMAT CHECK (OPTIONAL)
+   - ONLY AFTER steps A and B pass,
+     you MAY look at the value to confirm formatting.
+   - The value MUST NEVER override the header meaning.
+
+🚫 HARD INVALIDATION RULE:
+If a SOURCE HEADER contains any of these tokens:
+["org", "organization", "company", "entity", "institution"]
+THEN it is FOREVER INELIGIBLE to map to:
+["Name", "FullName", "PersonName"]
+EVEN IF the value appears to be a human name.
+Violation of this rule is a critical error.
+
+4. CONCEPTUAL INTEGRITY:
+   - Forbid mapping different semantic concepts.
+   - If the exact requested concept is not in the source, leave the target EMPTY.
+5. NO GUESSING: If a field is not found in source, leave it empty (""). DO NOT map 'something similar' if it changes core meaning.
+
+Return JSON: { "type": "field_mapping", "mapping": { "target": "source" } }`,
 
     EXTRACTOR_PARSING_FUNCTION: (targetSchema: string, sampleData: string) => `You are an ELITE JavaScript Engineer.
 Generate a high-performance 'parseRecord' function for this data.
@@ -51,29 +84,51 @@ Your absolute priority is WORD AND ENTITY INTEGRITY.
 ================================================
 ABSOLUTE RULES (NON-NEGOTIABLE)
 ================================================
-1. NEVER guess data. NEVER invent values. NEVER hallucinate headers.
-2. DATA ROBBERY IS STRICTLY FORBIDDEN: 
+HEADER DOMINANCE RULE (CRITICAL):
+- Header semantics ALWAYS override value semantics.
+- Values are NOT allowed to reclassify or reinterpret headers.
+- If header meaning and value meaning conflict, TRUST THE HEADER.
+
+NEGATIVE CONSTRAINT:
+- Headers containing "Organization", "Org", or "Entity"
+  MUST NEVER populate human-identity fields such as:
+  Name, FullName, PersonName.
+
+1. USER OVERRIDE PRIORITY: Always respect user instructions regarding specific field aliases if provided.
+2. HEADER-FIRST SEMANTIC SAFETY (CRITICAL):
+
+   Extraction MUST obey HEADER DOMINANCE.
+
+   - The SOURCE HEADER defines the semantic class of the field.
+   - The field VALUE is NON-AUTHORITATIVE and MAY NOT reclassify the header.
+   - If header and value semantics conflict, TRUST THE HEADER.
+
+   HARD INVALIDATION:
+   - Headers containing "Organization", "Org", "Entity", "Company", or "Institution"
+     MUST NEVER populate human-identity fields such as:
+     Name, FullName, PersonName.
+   - This rule applies EVEN IF the value appears to be a human name.
+
+3. CONCEPTUAL INTEGRITY: NEVER map distinct semantic concepts without an explicit user override.
+4. NO HALLUCINATION: If a field is missing from source, leave it empty "". NEVER guess values.
+5. DATA ROBBERY IS STRICTLY FORBIDDEN: 
    - NEVER take characters from the end of one word to fill a following column.
    - ✅ CORRECT: Keep "GovernorNonPartisan" in the FIRST applicable column and leave others empty ("").
-3. WORD INTEGRITY: NEVER split a single word or code at any cost.
-4. THE CLUMPING RULE: 
-   - If spacing is missing between semantic units (e.g., "MariaGonzalezMayorNonPartisan"), clump the entire string into the single most likely column.
+6. WORD INTEGRITY: NEVER split a single word or code at any cost.
+7. THE CLUMPING RULE: 
+   - If spacing is missing between semantic units, clump the entire string into the single most likely column.
    - LEAVE THE OTHER COLUMNS EMPTY ("").
-5. STACKED FORM HANDLING:
-   - For vertical forms (where labels are above or below values), maintain strict association.
-   - If a record spans multiple layout blocks (e.g., Line 1 has Amount, Line 2 has Name), MERGE them into a single coherent record according to the schema.
-   - ⚠️ NEVER treat Line 1 and Line 2 as separate records. They are TWO PARTS of ONE record.
-6. VALIDITY: A row is valid if it contains at least ONE semantic fragment from the target schema.
-7. DO NOT SKIP: If you see data that looks like a record but is missing some fields, extract the fields that ARE present. NEVER skip a record just because it is incomplete.
-8. LITERAL MATCH PRIORITY: If a source column/header exactly matches a target parameter name, you MUST use that mapping.
-9. PREVENT REDUNDANCY: NEVER map a single source field to multiple target parameters. Even if names are similar (e.g., 'ref' and 'primary ref'), only map to the most specific literal match found in the document.
-10. TYPO & NEAR-MATCH TOLERANCE: You ARE allowed to map fields with spelling mistakes or slight structural differences (e.g., 'voterid' to 'Voter ID').
-11. NO SEMANTIC BROADENING: NEVER map distinct semantic parameters (e.g., 'Primary Ref' to 'Ref') just because they are related. Only map when the source header is a direct representation or a near-alias of the target.
+8. STACKED FORM HANDLING:
+   - For vertical forms, maintain strict association.
+   - Use multi-line merging for coherent records.
+9. VALIDITY: A row is valid if it contains at least ONE semantic fragment from the target schema.
+10. LITERAL MATCH PRIORITY: If a source column header matches a target parameter, use it.
+11. PREVENT REDUNDANCY: NEVER map a single source field to multiple target parameters.
 
 ================================================
 TECHNICAL INSTRUCTIONS
 ================================================
-1. Map source data to the TARGET SCHEMA by MEANING.
+1. Map source data to the TARGET SCHEMA by MEANING + STRICT CONCEPTUAL INTEGRITY.
 2. Preserve document order.
 3. RETURN JSON ONLY. { "records": [...] }
 

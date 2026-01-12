@@ -7,6 +7,7 @@ import { Bucket } from '../models/Bucket';
 import { CustomerRecord } from '../models/CustomerRecord';
 // @ts-ignore
 import bcrypt from 'bcryptjs';
+import { GlobalSettings } from '../models/GlobalSettings';
 
 const router = express.Router();
 
@@ -171,6 +172,31 @@ router.post('/create-admin', async (req: Request, res: Response) => {
 
         await user.save();
         res.json({ msg: 'Admin created successfully', user: { id: user.id, name: user.name, email: user.email } });
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET Global Settings
+router.get('/settings/:key', async (req: AuthRequest, res: Response) => {
+    try {
+        const setting = await GlobalSettings.findOne({ key: req.params.key });
+        res.json(setting ? setting.value : null);
+    } catch (err: any) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST Global Settings
+router.post('/settings/:key', async (req: AuthRequest, res: Response) => {
+    try {
+        const { value } = req.body;
+        const setting = await GlobalSettings.findOneAndUpdate(
+            { key: req.params.key },
+            { value, updatedBy: req.user.id },
+            { upsert: true, new: true }
+        );
+        res.json(setting);
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

@@ -132,6 +132,9 @@ router.post('/', async (req: AuthRequest, res: Response) => {
 // Get bucket details
 router.get('/:id', async (req: Request, res: Response) => {
     try {
+        if (req.params.id === 'admin') {
+            return res.json({ _id: 'admin', name: 'Global Admin', type: 'global', parameters: [] });
+        }
         const bucket = await Bucket.findById(req.params.id);
         res.json(bucket);
     } catch (err: any) {
@@ -175,6 +178,10 @@ router.put('/:id', async (req: AuthRequest, res: Response) => {
 router.post('/:id/headers', async (req: Request, res: Response) => {
     try {
         const { filters } = req.body;
+        if (req.params.id === 'admin') {
+            const headers = await fetchHeaders(filters);
+            return res.json(headers);
+        }
         const bucket = await Bucket.findById(req.params.id);
         if (!bucket) return res.status(404).json({ msg: 'Bucket not found' });
 
@@ -191,6 +198,9 @@ router.post('/:id/headers', async (req: Request, res: Response) => {
 router.post('/:id/sync', async (req: AuthRequest, res: Response) => {
     try {
         const { filters } = req.body;
+        if (req.params.id === 'admin') {
+            return res.status(400).json({ error: 'Sync not available for direct admin ID. Please select a specific global bucket.' });
+        }
         const bucket = await Bucket.findById(req.params.id);
         if (!bucket) return res.status(404).json({ msg: 'Bucket not found' });
 
@@ -299,6 +309,9 @@ router.get('/:id/batches', async (req: Request, res: Response) => {
 // Get Staging Data
 router.get('/:id/staging', async (req: Request, res: Response) => {
     try {
+        if (req.params.id === 'admin') {
+            return res.json([]); // Admin/Global data doesn't use the staging flow in the same way
+        }
         // Find the latest pending batch first to ensure we show the most relevant data
         const latestBatch = await SyncBatch.findOne({ bucketId: req.params.id, status: 'pending' }).sort({ createdAt: -1 });
 
@@ -370,6 +383,10 @@ router.get('/:id/customer', async (req: Request, res: Response) => {
 // Get Stats: Customer Counts per State
 router.get('/:id/stats/states', async (req: Request, res: Response) => {
     try {
+        if (req.params.id === 'admin') {
+            // Return global stats instead? For now return empty to avoid crash
+            return res.json({});
+        }
         const stats = await CustomerRecord.aggregate([
             { $match: { bucketId: new mongoose.Types.ObjectId(req.params.id) } },
             {
@@ -397,6 +414,9 @@ router.get('/:id/stats/states', async (req: Request, res: Response) => {
 // @ts-ignore
 router.post('/:id/upload', upload.single('file'), async (req: AuthRequest, res: Response) => {
     try {
+        if (req.params.id === 'admin') {
+            return res.status(403).json({ error: 'Direct upload to Global Admin ID not allowed. Use specific global buckets or Admin dashboard.' });
+        }
         const bucket = await Bucket.findOne({ _id: req.params.id, createdBy: req.user.id });
         if (!bucket) return res.status(404).json({ error: 'Bucket not found or access denied' });
 
