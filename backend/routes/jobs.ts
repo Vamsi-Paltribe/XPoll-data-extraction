@@ -54,10 +54,26 @@ router.get('/', async (req: Request, res: Response) => {
 // @ts-ignore
 router.get('/bucket/:bucketId', auth, async (req: Request, res: Response) => {
     try {
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const skip = (page - 1) * limit;
+
+        const total = await Job.countDocuments({ bucketId: req.params.bucketId });
+
         const jobs = await Job.find({ bucketId: req.params.bucketId })
             .sort({ createdAt: -1 })
-            .limit(50);
-        res.json(jobs);
+            .skip(skip)
+            .limit(limit);
+
+        res.json({
+            jobs,
+            pagination: {
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit)
+            }
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }

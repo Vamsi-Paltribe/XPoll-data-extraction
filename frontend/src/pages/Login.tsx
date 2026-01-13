@@ -1,107 +1,125 @@
-import { useState, FormEvent } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../services/api';
-import { useMutation } from '@tanstack/react-query';
-import { Zap, Mail, Lock, LogIn, Chrome as Google } from 'lucide-react';
-
-interface LoginResponse {
-    token: string;
-}
+import BannerImage from '../assets/xpoll.png';
 
 const Login = () => {
+    const navigate = useNavigate();
+    const location = useLocation();
     const [formData, setFormData] = useState({ email: '', password: '' });
+    const [error, setError] = useState('');
 
-    const loginMutation = useMutation({
-        mutationFn: (data: typeof formData) => api.post('/auth/login', data),
-        onSuccess: (res) => {
-            const data = res.data as LoginResponse;
-            localStorage.setItem('token', data.token);
-            window.location.href = '/';
-        },
-        onError: () => {
-            alert('Login Failed');
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const token = params.get('token');
+        if (token) {
+            localStorage.setItem('token', token);
+            navigate('/');
         }
-    });
+    }, [location, navigate]);
 
-    const handleSubmit = (e: FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        loginMutation.mutate(formData);
+        try {
+            const res = await api.post('/auth/login', formData);
+            localStorage.setItem('token', res.data.token);
+            navigate('/');
+        } catch (err: any) {
+            setError(err.response?.data?.msg || 'Login failed');
+        }
     };
 
     const handleGoogleLogin = () => {
-        window.location.href = 'http://localhost:5000/api/auth/google';
+        window.location.href = `${api.defaults.baseURL}/auth/google`;
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-slate-50 font-sans selection:bg-slate-900 selection:text-white">
-            <div className="p-12 md:p-16 bg-white rounded-[2.5rem] shadow-modal w-full max-w-xl border border-slate-200 relative z-10 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex flex-col items-center mb-12">
-                    <div className="w-16 h-16 bg-slate-900 rounded-2xl flex items-center justify-center shadow-lg shadow-slate-900/10 mb-8">
-                        <Zap className="w-8 h-8 text-white" />
-                    </div>
-                    <h2 className="text-3xl font-bold text-slate-900 tracking-tight mb-1">X-POLL</h2>
-                    <p className="text-[10px] font-bold uppercase tracking-[0.3em] text-slate-400 font-mono">Intelligence Terminal</p>
-                </div>
+        <div className="min-h-screen flex flex-col lg:flex-row lg:justify-center bg-[#000000]" >
 
-                <form onSubmit={handleSubmit} className="space-y-6">
-                    <div className="space-y-2">
-                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest pl-1">Authorized Email</label>
-                        <div className="relative group">
-                            <Mail className="absolute left-6 top-5 w-4 h-4 text-slate-300 group-focus-within:text-slate-900 transition-colors" />
-                            <input
-                                type="email"
-                                placeholder="name@organization.com"
-                                className="w-full pl-16 pr-8 py-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:bg-white focus:border-slate-900 transition-all placeholder:text-slate-200"
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                            />
+            {/* Left Side: Login Form Container */}
+            <div className="w-full lg:w-[35%] flex items-center justify-center p-6 z-10">
+                <div className="w-full max-w-2xl animate-in slide-in-from-left duration-700">
+                    <div className="bg-white p-10 lg:p-12 rounded-[40px] h-[85dvh] shadow-2xl shadow-black/10 relative overflow-hidden">
+
+                        {/* Brand Header */}
+                        <div className="mb-10 relative z-10 text-center">
+                            <div className="rounded-2xl flex items-center justify-center mb-6 mx-auto">
+                                <img src="https://xpoll-landing-102025.nyc3.cdn.digitaloceanspaces.com/xpoll-logo.svg" className="w-20 h-20" alt="logo" />
+                            </div>
+                            <h1 className="text-4xl font-extrabold text-[#2D384A] tracking-tight mb-2">Welcome Back.</h1>
+                            <p className="text-slate-500 font-medium">Enter your credentials to access the intelligence terminal.</p>
                         </div>
-                    </div>
 
-                    <div className="space-y-2">
-                        <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-widest pl-1">Security Key</label>
-                        <div className="relative group">
-                            <Lock className="absolute left-6 top-5 w-4 h-4 text-slate-300 group-focus-within:text-slate-900 transition-colors" />
-                            <input
-                                type="password"
-                                placeholder="••••••••••••"
-                                className="w-full pl-16 pr-8 py-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 outline-none focus:bg-white focus:border-slate-900 transition-all placeholder:text-slate-200"
-                                value={formData.password}
-                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                            />
-                        </div>
-                    </div>
-
-                    <button
-                        type="submit"
-                        disabled={loginMutation.isPending}
-                        className="w-full bg-slate-900 text-white py-4 rounded-xl text-xs font-bold uppercase tracking-widest transition-all hover:bg-black active:scale-[0.98] shadow-lg shadow-slate-900/10 flex items-center justify-center gap-3 disabled:opacity-50"
-                    >
-                        {loginMutation.isPending ? 'AUTHENTICATING...' : (
-                            <>
-                                ACCESS TERMINAL
-                                <LogIn className="w-4 h-4" />
-                            </>
+                        {error && (
+                            <div className="p-4 mb-6 text-xs font-bold text-red-600 bg-red-50 rounded-2xl border border-red-100 flex items-center gap-2 animate-in fade-in">
+                                <div className="w-2 h-2 bg-red-500 rounded-full" />
+                                {error}
+                            </div>
                         )}
-                    </button>
-                </form>
 
-                <div className="mt-10 flex items-center justify-between">
-                    <div className="h-[1px] flex-1 bg-slate-100" />
-                    <span className="text-[9px] font-bold text-slate-300 uppercase tracking-[0.2em] px-6">System Identity</span>
-                    <div className="h-[1px] flex-1 bg-slate-100" />
+                        <form onSubmit={handleSubmit} className="space-y-5 relative z-10">
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1">Work Email</label>
+                                <input
+                                    type="email"
+                                    placeholder="name@organization.com"
+                                    className="w-full px-8 py-5 bg-[#f0f4f9]/40 rounded-[24px] text-sm font-semibold text-[#2D384A] outline-none focus:bg-white focus:border-[#A8328D]/30 focus:ring-4 focus:ring-[#A8328D]/5 transition-all border border-transparent placeholder:text-slate-300"
+                                    value={formData.email}
+                                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <div className="flex justify-between items-center ml-1">
+                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Password</label>
+                                    <a href="#" className="text-[10px] font-bold text-[#A8328D] hover:underline">Forgot?</a>
+                                </div>
+                                <input
+                                    type="text"
+                                    placeholder="••••••••••••"
+                                    className="w-full px-8 py-5 bg-[#f0f4f9]/40 rounded-[24px] text-sm font-semibold text-[#2D384A] outline-none focus:bg-white focus:border-[#A8328D]/30 focus:ring-4 focus:ring-[#A8328D]/5 transition-all border border-transparent placeholder:text-slate-300"
+                                    value={formData.password}
+                                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                />
+                            </div>
+
+                            <button
+                                type="submit"
+                                className="w-full py-5 bg-[#2D384A] text-white rounded-[24px] font-bold text-xs shadow-xl shadow-[#2D384A]/20 hover:bg-black transition-all hover:-translate-y-1 active:translate-y-0 uppercase tracking-widest mt-4"
+                            >
+                                Sign In
+                            </button>
+                        </form>
+
+                        <div className="mt-8 relative z-10">
+                            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
+                            <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-4 text-slate-400 font-bold tracking-widest">Or continue with</span></div>
+                        </div>
+
+                        <div className="mt-8 relative z-10">
+                            <button
+                                onClick={handleGoogleLogin}
+                                className="w-full py-4 bg-white text-[#2D384A] rounded-[24px] font-bold text-xs border border-slate-200 hover:bg-slate-50 transition-all flex items-center justify-center gap-3 uppercase tracking-widest"
+                            >
+                                System SSO Login
+                            </button>
+                        </div>
+
+                        <p className="mt-10 text-center text-xs font-semibold text-slate-400">
+                            Don't have an account? <a className="text-[#A8328D] hover:underline cursor-pointer">Request Access</a>
+                        </p>
+                    </div>
                 </div>
+            </div>
 
-                <button
-                    onClick={handleGoogleLogin}
-                    className="mt-10 w-full bg-white text-slate-900 py-4 rounded-xl border border-slate-200 hover:bg-slate-50 transition-all font-bold text-xs uppercase tracking-widest flex items-center justify-center gap-3 shadow-sm active:scale-[0.98]"
-                >
-                    <Google className="w-4 h-4 text-slate-900" />
-                    System SSO Login
-                </button>
-
-                <p className="mt-12 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                    &copy; 2024 X-POLL INTELLIGENCE SYSTEMS.
-                </p>
+            {/* Right Side: High-Impact Banner Section */}
+            <div className="hidden lg:flex lg:w-[55%] relative bg-[#2D384A] overflow-hidden">
+                <img
+                    src={BannerImage}
+                    className="w-full h-screen object-cover bg-cover opacity-90"
+                    alt="XPoll Agentic Data Extraction"
+                />
+                {/* Optional: Dark Overlay for more professional consistency */}
+                <div className="absolute inset-0 bg-gradient-to-r from-[#2D384A]/10 to-transparent pointer-events-none" />
             </div>
         </div>
     );

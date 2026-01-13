@@ -4,7 +4,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import RegistryView from './pages/RegistryView';
 import Ledger from './pages/Ledger';
-import Layout from './components/Layout';
+import Sidebar from './components/Sidebar';
+import { Toaster } from 'sonner';
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -37,60 +38,72 @@ const AuthCallback = () => {
     }
   }, [location, navigate]);
 
-  return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  return <div className="flex items-center justify-center h-screen bg-[#f0f4f9] text-[#2D384A] font-bold">Loading...</div>;
+};
+
+// Layout wrapper to conditionally show Sidebar
+const AppLayout = ({ children }: { children: React.ReactNode }) => {
+  const location = useLocation();
+  const isLoginPage = location.pathname === '/login';
+  const isAuthCallbackPage = location.pathname === '/auth/callback';
+  const showSidebar = !isLoginPage && !isAuthCallbackPage;
+
+  return (
+    <div className={`flex bg-[#f0f4f9] ${showSidebar ? 'flex-row' : ''}`}>
+      {showSidebar && <Sidebar />}
+      <main className={`flex-1 ${showSidebar ? 'ml-[88px] p-6 mx-auto w-full' : ''}`}>
+        {children}
+      </main>
+      <Toaster position="top-right" />
+    </div>
+  );
 };
 
 function App() {
   return (
     <Router>
-      <div className="min-h-screen bg-background text-slate-900 font-sans">
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/auth/callback" element={<AuthCallback />} />
+      <AppLayout>
+        <div className="font-sans text-[#2D384A]">
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
 
-          {/* Protected routes */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Layout>
+            {/* Protected routes */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
                   <Dashboard />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/registry/:id"
-            element={
-              <ProtectedRoute>
-                <Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/registry/:id"
+              element={
+                <ProtectedRoute>
                   <RegistryView />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/ledger"
-            element={
-              <ProtectedRoute>
-                <Layout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/ledger"
+              element={
+                <ProtectedRoute>
                   <Ledger />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/settings"
-            element={
-              <ProtectedRoute>
-                <Layout>
-                  <div className="p-8">Settings (Not Implemented)</div>
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </div>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <div className="p-12 text-center text-slate-400 font-bold uppercase tracking-widest">Settings Module Not Implemented</div>
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </div>
+      </AppLayout>
     </Router>
   );
 }

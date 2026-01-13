@@ -52,7 +52,15 @@ router.post('/query', async (req: Request, res: Response) => {
 
         console.log(`[Explorer] Processing Query: "${query}"`);
 
-        // 1. AI Translation
+        // 1. Truth-Based Field Discovery
+        const sampleRecord = await CustomerRecord.findOne({}).lean();
+        let availableFields: string[] = [];
+        if (sampleRecord && (sampleRecord as any).data) {
+            availableFields = Object.keys((sampleRecord as any).data);
+        }
+        const fieldsContext = availableFields.map(f => `- ${f}`).join('\n') || 'None detected';
+
+        // 2. AI Translation
         const systemPrompt = `
 You are a MongoDB Expert. Convert the user's natural language request into a strict MongoDB Aggregation Pipeline for a collection called 'CustomerRecord'.
 
@@ -61,6 +69,9 @@ Schema Context:
 - Example Document: { "_id": "...", "data": { "Name": "John", "City": "Austin", "State": "Texas", "Industry": "IT" }, "bucketId": "..." }
 - When filtering or grouping, you MUST refer to fields as 'data.Field'. Example: 'data.State'.
 - Do NOT perform operations on 'bucketId' or 'history' unless explicitly asked.
+
+AVAILABLE FIELDS in 'data' (Source of Truth):
+${fieldsContext}
 
 Rules:
 1. Return ONLY the raw JSON array of the pipeline. No Markdown, no explanations.

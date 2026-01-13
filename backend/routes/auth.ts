@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs';
 import { User } from '../models/User';
 import auth from '../middleware/auth';
 import { TokenLedger } from '../models/TokenLedger';
+import mongoose from 'mongoose';
 
 const router = express.Router();
 
@@ -91,6 +92,50 @@ router.get('/ledger', auth, async (req: AuthRequest, res: Response) => {
             .populate('bucketId', 'name')
             .sort({ createdAt: -1 });
         res.json(ledger);
+    } catch (err: any) {
+        console.error(err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get Token Usage Analytics (Last 7 Days)
+// @ts-ignore
+router.get('/analytics/token-usage', auth, async (req: AuthRequest, res: Response) => {
+    try {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+        const usage = await TokenLedger.aggregate([
+            {
+                $match: {
+                    userId: new mongoose.Types.ObjectId(req.user.id),
+                    type: 'debit',
+                    createdAt: { $gte: sevenDaysAgo }
+                }
+            },
+            {
+                $group: {
+                    _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+                    total: { $sum: "$amount" }
+                }
+            },
+            { $sort: { _id: 1 } }
+        ]);
+
+        // Fill in missing days
+        const result = [];
+        for (let i = 0; i < 7; i++) {
+            const d = new Date();
+            d.setDate(d.getDate() - i);
+            const dateStr = d.toISOString().split('T')[0];
+            const found = usage.find(u => u._id === dateStr);
+            result.push({
+                date: dateStr,
+                name: d.toLocaleDateString('en-US', { weekday: 'short' }),
+                value: found ? found.total : 0
+            });
+        }
+        res.json(result.reverse());
     } catch (err: any) {
         console.error(err.message);
         res.status(500).json({ error: err.message });

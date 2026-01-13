@@ -383,8 +383,23 @@ router.delete('/:id/batches/:batchId', async (req: Request, res: Response) => {
 // Get Customer Data
 router.get('/:id/customer', async (req: Request, res: Response) => {
     try {
-        const records = await CustomerRecord.find({ bucketId: req.params.id }).sort({ updatedAt: -1 });
-        res.json(records);
+        const page = parseInt(req.query.page as string) || 1;
+        const limit = parseInt(req.query.limit as string) || 20;
+        const skip = (page - 1) * limit;
+
+        const total = await CustomerRecord.countDocuments({ bucketId: req.params.id });
+        const records = await CustomerRecord.find({ bucketId: req.params.id })
+            .sort({ updatedAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        res.json({
+            data: records,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit)
+        });
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }

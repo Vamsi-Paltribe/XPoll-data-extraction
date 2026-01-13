@@ -205,8 +205,8 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
                             onClick={() => {
                                 onApprove(job._id, manualState ? { manualState } : undefined);
                             }}
-                            disabled={isProcessing}
-                            className="px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-2xl shadow-xl shadow-slate-900/10 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100"
+                            disabled={isProcessing || !manualState}
+                            className="px-8 py-3 bg-slate-900 hover:bg-black text-white font-bold rounded-2xl shadow-xl shadow-slate-900/10 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed"
                         >
                             {isProcessing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
                             Approve & Commit

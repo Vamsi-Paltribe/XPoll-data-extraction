@@ -14,7 +14,11 @@ import auth from '../middleware/auth';
 import { imageQueue } from '../queue';
 
 import { OpenAI } from "openai";
+import { CustomerRecord } from '../models/CustomerRecord';
+import fs from 'fs';
+import path from 'path';
 
+const LOG_FILE = path.join(process.cwd(), 'query_flow.log');
 const router = express.Router();
 
 // Multer setup for memory storage (to process intent before upload if small, or use stream)
@@ -157,5 +161,131 @@ router.post('/upload', auth, upload.single('file'), async (req: any, res: any) =
     }
 });
 
+
+
+
+const appendQueryLog = (step: string, details: any) => {
+    const timestamp = new Date().toISOString();
+    const logEntry = `
+[${timestamp}] --- STEP: ${step} ---
+${typeof details === 'object' ? JSON.stringify(details, null, 2) : details}
+---------------------------------------------
+`;
+    fs.appendFileSync(LOG_FILE, logEntry);
+};
+
+// POST /api/agent/query - Chat to Database
+// @ts-ignore
+router.post('/query', auth, async (req: any, res: any) => {
+    try {
+        const { bucketId, prompt, page = 1, limit = 20 } = req.body;
+        const userId = req.user.id;
+
+        appendQueryLog('REQUEST_START', { userId, bucketId, prompt, page, limit });
+
+        if (!bucketId || !prompt) return res.status(400).json({ error: "Bucket ID and prompt are required" });
+
+        // 1. Validate Access
+        const bucket = await Bucket.findOne({ _id: bucketId, createdBy: userId });
+        if (!bucket) {
+            appendQueryLog('ERROR', 'Access denied to bucket');
+            return res.status(403).json({ error: "Access denied to this bucket" });
+        }
+
+        // 2. Discover Actual Fields (Truth-Based Field Discovery)
+        const sampleRecord = await CustomerRecord.findOne({ bucketId }).lean();
+        let availableFields: string[] = [];
+
+        if (sampleRecord && (sampleRecord as any).data) {
+            availableFields = Object.keys((sampleRecord as any).data);
+            appendQueryLog('FIELD_DISCOVERY', { source: 'sample_record', fields: availableFields });
+        } else {
+            // Fallback to bucket parameters if no records exist
+            availableFields = bucket.parameters?.map((p: any) => p.name) || [];
+            appendQueryLog('FIELD_DISCOVERY', { source: 'bucket_parameters', fields: availableFields });
+        }
+
+        const fieldsContext = availableFields.map(f => `- ${f}`).join('\n') || 'None detected';
+
+        const systemPrompt = `
+            You are a MongoDB Query Generator for a 'CustomerRecord' collection.
+            The collection schema is: { bucketId: ObjectId, data: Object, ... }.
+            The 'data' field contains the actual dynamic fields.
+            
+            AVAILABLE FIELDS in 'data' (Source of Truth):
+            ${fieldsContext}
+            
+            Your goal: Convert the user's natural language request into a MongoDB find query filter.
+            
+            RULES:
+            1. Return ONLY the JSON object for the filter. No markdown, no comments.
+            2. ALWAYS target fields with the 'data.' prefix (e.g., 'data.City' not 'City').
+            3. Use case-insensitive regex for string matches if searching by name/text (e.g., { 'data.Name': { $regex: 'John', $options: 'i' } }).
+            4. If the user provides a specific ID or code, use exact match WITHOUT regex.
+            5. IMPORTANT: Your task is to FIND the records. Use your natural language understanding to map the user's request to the AVAILABLE FIELDS listed above. 
+            6. Ignore requests for specific info like "show me the name" or "get me the email". Return the filter to find the whole record.
+            7. Do NOT filter by 'bucketId', that is handled by the server.
+            8. If query is vague, return empty filter {}.
+            
+            Examples:
+            User: "Find people in California" -> Output: { "data.State": { "$regex": "California", "$options": "i" } }
+            User: "get me the record for ID 858223" -> Output: { "data.id": "858223" }
+            User: "show records where organization is AARON" -> Output: { "data.organization name": { "$regex": "AARON", "$options": "i" } }
+        `;
+
+        appendQueryLog('LLM_SYSTEM_PROMPT', systemPrompt);
+
+        const completion = await openai.chat.completions.create({
+            model: "gpt-4o-mini", // Fast & Cheap
+            messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: prompt }
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0
+        });
+
+        const filter = JSON.parse(completion.choices[0].message.content || '{}');
+        appendQueryLog('LLM_GENERATED_FILTER', filter);
+
+        // 3. Execute Query
+        const skip = (page - 1) * limit;
+        const query = { bucketId, ...filter };
+        appendQueryLog('MONGODB_QUERY_EXECUTION', query);
+
+        const startTime = Date.now();
+        const [records, total] = await Promise.all([
+            CustomerRecord.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
+            CustomerRecord.countDocuments(query)
+        ]);
+        const duration = Date.now() - startTime;
+
+        appendQueryLog('QUERY_RESULT_SUMMARY', { total, durationMs: duration });
+
+        // 4. Determine Answer Type (Stat vs List) based on prompt analysis
+        let summaryCheck = null;
+        if (prompt.toLowerCase().includes('count') || prompt.toLowerCase().includes('how many')) {
+            summaryCheck = { type: 'stat', value: total, label: 'Matching Records' };
+        }
+
+        res.json({
+            success: true,
+            data: records,
+            summary: summaryCheck,
+            pagination: {
+                total,
+                page,
+                limit,
+                pages: Math.ceil(total / limit)
+            },
+            queryUsed: filter
+        });
+
+    } catch (error: any) {
+        appendQueryLog('CRITICAL_ERROR', { error: error.message, stack: error.stack });
+        console.error("Agent Query Error:", error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 export default router;

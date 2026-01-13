@@ -1,11 +1,13 @@
 
 import { useState, useRef, useEffect, ChangeEvent, KeyboardEvent } from 'react';
-import { Paperclip, XCircle, FileText, Loader2, Sparkles, Bot, ArrowUp, CheckCircle, XOctagon, Clock, Layers } from 'lucide-react';
+import { Paperclip, XCircle, FileText, Loader2, Sparkles, Bot, ArrowUp, CheckCircle, XOctagon, Clock, Layers, Database, Hash, Search } from 'lucide-react';
 import api from '../services/api';
 import clsx from 'clsx';
-import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
+import { useQueryClient, useInfiniteQuery, useMutation } from '@tanstack/react-query';
 import { AxiosError } from 'axios';
+import { toast } from 'sonner';
 import ReviewExtractionModal from './ReviewExtractionModal';
+import QueryResultModal from './QueryResultModal';
 
 interface AIAgentViewProps {
     bucketId?: string;
@@ -19,6 +21,12 @@ interface Message {
     file?: File;
     isLoading?: boolean;
     isError?: boolean;
+    queryResult?: {
+        summary: { type: 'stat', value: any, label: string } | null;
+        data: any[];
+        pagination: any;
+        prompt: string;
+    };
 }
 
 interface Job {
@@ -42,6 +50,13 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [selectedReviewJob, setSelectedReviewJob] = useState<Job | null>(null);
+    const [queryModalOpen, setQueryModalOpen] = useState(false);
+    const [queryModalData, setQueryModalData] = useState<{ records: any[], pagination: any, prompt: string }>({
+        records: [],
+        pagination: { total: 0, page: 1, limit: 20, pages: 1 },
+        prompt: ''
+    });
+
     const queryClient = useQueryClient();
 
     useEffect(() => {
@@ -70,14 +85,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
         }
     };
 
-    const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
     // Auto-resize textarea1
     useEffect(() => {
         if (textareaRef.current) {
@@ -87,25 +94,45 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
     }, [inputValue]);
 
     // --- Job Queue Logic ---
-    const { data: jobs, isLoading: jobsLoading } = useQuery({
-        queryKey: ['bucket-jobs', bucketId],
-        queryFn: async () => {
-            if (!bucketId) return [];
-            const res = await api.get<Job[]>(`/jobs/bucket/${bucketId}`);
+    // --- Job Queue Logic ---
+    const {
+        data: jobsData
+    } = useInfiniteQuery({
+        queryKey: ['jobs-infinite', bucketId],
+        queryFn: async ({ pageParam = 1 }) => {
+            if (!bucketId) return { jobs: [], pagination: { total: 0, page: 1, limit: 20, pages: 0 } };
+            const res = await api.get<{ jobs: Job[], pagination: any } | Job[]>(`/jobs/bucket/${bucketId}?page=${pageParam}&limit=20`);
+
+            // Handle legacy array response
+            if (Array.isArray(res.data)) {
+                return {
+                    jobs: res.data,
+                    pagination: { total: res.data.length, page: 1, limit: 1000, pages: 1 }
+                };
+            }
             return res.data;
         },
+        getNextPageParam: (lastPage) => {
+            if (!lastPage || !lastPage.pagination) return undefined;
+            const { page, pages } = lastPage.pagination;
+            return page < pages ? page + 1 : undefined;
+        },
         enabled: !!bucketId,
-        refetchInterval: 5000 // Poll every 5s
+        refetchInterval: 5000,
+        initialPageParam: 1
     });
+
+    const jobs = jobsData?.pages.flatMap(page => page.jobs) || [];
+
 
 
 
     const approveMutation = useMutation({
-        mutationFn: async (jobId: string) => {
-            await api.post(`/jobs/${jobId}/approve`);
+        mutationFn: async ({ jobId, manualState }: { jobId: string, manualState?: string }) => {
+            await api.post(`/jobs/${jobId}/approve`, { manualState });
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['bucket-jobs', bucketId] });
+            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', bucketId] });
             queryClient.invalidateQueries({ queryKey: ['registry-customers', bucketId] });
             queryClient.invalidateQueries({ queryKey: ['user-me'] }); // Refresh tokens
             queryClient.invalidateQueries({ queryKey: ['jobs'] });
@@ -122,7 +149,7 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
             await api.post(`/jobs/${jobId}/reject`);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['bucket-jobs', bucketId] });
+            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', bucketId] });
             setSelectedReviewJob(null);
         }
     });
@@ -219,13 +246,76 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                 setUploading(false);
             }
         } else {
-            // Text-only response (Mock for now, or could query KB)
-            setTimeout(() => {
-                setMessages(prev => [...prev, {
-                    type: 'system',
-                    content: "I'm currently optimized for file ingestion. Please attach a polling data file (PDF, CSV, Excel) for me to analyze."
-                }]);
-            }, 600);
+            // --- Chat-to-Query Logic ---
+            const userPrompt = currentPrompt;
+            setMessages(prev => [...prev, {
+                type: 'system',
+                isLoading: true,
+                content: `Searching database for "${userPrompt}"...`
+            }]);
+
+            try {
+                const res = await api.post('/agent/query', {
+                    bucketId,
+                    prompt: userPrompt,
+                    page: 1,
+                    limit: 20
+                });
+
+                setMessages(prev => {
+                    const filtered = prev.filter(m => !m.isLoading);
+                    const { data, summary, pagination } = res.data;
+
+                    let content = '';
+                    if (summary) {
+                        content = `Found **${summary.value}** matching records.`;
+                    } else if (data.length > 0) {
+                        content = `Found **${pagination.total}** records matching your request.`;
+                    } else {
+                        content = `I couldn't find any records matching "${userPrompt}".`;
+                    }
+
+                    return [...filtered, {
+                        type: 'system',
+                        content,
+                        queryResult: {
+                            summary,
+                            data,
+                            pagination,
+                            prompt: userPrompt
+                        }
+                    }];
+                });
+
+            } catch (err: any) {
+                setMessages(prev => {
+                    const filtered = prev.filter(m => !m.isLoading);
+                    return [...filtered, {
+                        type: 'system',
+                        isError: true,
+                        content: `❌ Query Failed: ${err.response?.data?.error || err.message}`
+                    }];
+                });
+            }
+        }
+    };
+
+    const handleQueryPageChange = async (newPage: number) => {
+        if (!queryModalData.prompt) return;
+        try {
+            const res = await api.post('/agent/query', {
+                bucketId,
+                prompt: queryModalData.prompt,
+                page: newPage,
+                limit: 20
+            });
+            setQueryModalData(prev => ({
+                ...prev,
+                records: res.data.data,
+                pagination: res.data.pagination
+            }));
+        } catch (err) {
+            toast.error("Failed to load page");
         }
     };
 
@@ -312,7 +402,72 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                                             {msg.content}
                                         </div>
                                     ) : (
-                                        <div className="whitespace-pre-wrap">{msg.content}</div>
+                                        <>
+                                            {msg.queryResult && (
+                                                <div className="mt-3">
+                                                    {/* Adaptive UI: Scenario A - Stat Card */}
+                                                    {msg.queryResult.summary && (
+                                                        <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 mb-3 flex items-center gap-4 w-fit">
+                                                            <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm text-indigo-600">
+                                                                <Hash className="w-6 h-6" />
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider">{msg.queryResult.summary.label}</p>
+                                                                <p className="text-3xl font-black text-indigo-900">{msg.queryResult.summary.value.toLocaleString()}</p>
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {/* Adaptive UI: Scenario B - Mini List (Small sets) */}
+                                                    {!msg.queryResult.summary && msg.queryResult.data && msg.queryResult.data.length > 0 && msg.queryResult.data.length <= 5 && (
+                                                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm mb-3 max-w-md">
+                                                            {msg.queryResult.data.map((rec: any, i: number) => (
+                                                                <div key={i} className="px-4 py-3 border-b border-slate-50 last:border-none flex items-center gap-3 hover:bg-slate-50">
+                                                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs">
+                                                                        {i + 1}
+                                                                    </div>
+                                                                    <div className="min-w-0">
+                                                                        <p className="font-bold text-slate-800 text-sm truncate">{rec.data?.Name || rec.data?.name || 'Record'}</p>
+                                                                        <p className="text-xs text-slate-400 truncate">{rec.data?.City || rec.data?.city || 'Unknown City'}</p>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Adaptive UI: Scenario C - Summary + Action (Large sets) */}
+                                                    {!msg.queryResult.summary && msg.queryResult.pagination && msg.queryResult.pagination.total > 5 && (
+                                                        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm mb-3 max-w-sm">
+                                                            <div className="flex items-center gap-3 mb-3">
+                                                                <div className="p-2 bg-purple-50 rounded-lg text-purple-600">
+                                                                    <Database className="w-5 h-5" />
+                                                                </div>
+                                                                <div>
+                                                                    <p className="font-bold text-slate-900 text-sm">{msg.queryResult.pagination.total} Records Found</p>
+                                                                    <p className="text-xs text-slate-400">Showing first {msg.queryResult.data.length}</p>
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                onClick={() => {
+                                                                    setQueryModalData({
+                                                                        records: msg.queryResult!.data,
+                                                                        pagination: msg.queryResult!.pagination,
+                                                                        prompt: msg.queryResult!.prompt
+                                                                    });
+                                                                    setQueryModalOpen(true);
+                                                                }}
+                                                                className="w-full py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors flex items-center justify-center gap-2"
+                                                            >
+                                                                <Search className="w-3 h-3" />
+                                                                View Full Results
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            <div className="whitespace-pre-wrap">{msg.content}</div>
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -392,7 +547,7 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                         <Clock className="w-4 h-4 text-slate-400" />
                         Job History
                     </h3>
-                    {jobsLoading && <Loader2 className="w-4 h-4 animate-spin text-slate-400" />}
+                    {/* Simple loading indicator if needed, though infinite query handles it differently */}
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -454,7 +609,7 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
 
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => approveMutation.mutate(job._id)}
+                                                    onClick={() => approveMutation.mutate({ jobId: job._id })}
                                                     disabled={approveMutation.isPending}
                                                     className="flex-1 py-2 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1"
                                                 >
@@ -495,18 +650,29 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                 </div>
             </div>
 
-            {selectedReviewJob && (
-                <ReviewExtractionModal
-                    job={selectedReviewJob}
-                    onClose={() => setSelectedReviewJob(null)}
-                    onApprove={(jobId: string, options?: { manualState?: string }) => {
-                        approveMutation.mutate({ jobId, ...options });
-                    }}
-                    onReject={(id: string) => rejectMutation.mutate(id)}
-                    isProcessing={approveMutation.isPending || rejectMutation.isPending}
-                />
-            )}
-        </div>
+            {
+                selectedReviewJob && (
+                    <ReviewExtractionModal
+                        job={selectedReviewJob}
+                        onClose={() => setSelectedReviewJob(null)}
+                        onApprove={(jobId: string, options?: { manualState?: string }) => {
+                            approveMutation.mutate({ jobId, ...options });
+                        }}
+                        onReject={(id: string) => rejectMutation.mutate(id)}
+                        isProcessing={approveMutation.isPending || rejectMutation.isPending}
+                    />
+                )
+            }
+
+            <QueryResultModal
+                isOpen={queryModalOpen}
+                onClose={() => setQueryModalOpen(false)}
+                queryPrompt={queryModalData.prompt}
+                records={queryModalData.records}
+                pagination={queryModalData.pagination}
+                onPageChange={handleQueryPageChange}
+            />
+        </div >
     );
 };
 
