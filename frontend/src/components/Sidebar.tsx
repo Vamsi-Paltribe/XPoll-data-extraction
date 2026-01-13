@@ -1,4 +1,4 @@
-import { Settings, LogOut, Wallet, LayoutGrid } from 'lucide-react';
+import { LogOut, Wallet, LayoutGrid } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -10,7 +10,6 @@ const Sidebar = () => {
     const navItems = [
         { icon: LayoutGrid, label: 'Dashboard', path: '/' },
         { icon: Wallet, label: 'Wallet', path: '/ledger' },
-        { icon: Settings, label: 'Settings', path: '/settings' },
     ];
 
     const handleLogout = () => {

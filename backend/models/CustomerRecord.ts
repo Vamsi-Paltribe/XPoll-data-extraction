@@ -5,6 +5,12 @@ export interface ICustomerRecord extends Document {
     bucketId: IBucket['_id'];
     data: any;
     keyHash?: string;
+    lineage?: {
+        bucketId: mongoose.Types.ObjectId;
+        recordId: mongoose.Types.ObjectId;
+        mergedAt: Date;
+    }[];
+    isMergeResult?: boolean;
     history: {
         timestamp: Date;
         action: string;
@@ -19,9 +25,14 @@ const CustomerRecordSchema = new Schema({
 
     data: { type: mongoose.Schema.Types.Mixed },
 
-    keyHash: { type: String, index: true }, // Uniqueness is enforced per bucket via compound index below
-    // Actually, uniqueness should be per Bucket. 
-    // Mongoose unique index needs compound index if we want per-bucket uniqueness.
+    keyHash: { type: String, index: true },
+
+    lineage: [{
+        bucketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bucket' },
+        recordId: { type: mongoose.Schema.Types.ObjectId },
+        mergedAt: { type: Date, default: Date.now }
+    }],
+    isMergeResult: { type: Boolean, default: false },
 
     history: [{
         timestamp: { type: Date, default: Date.now },

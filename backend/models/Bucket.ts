@@ -34,6 +34,12 @@ export interface IBucket extends Document {
     availableHeaders: string[];
     availableStates: string[];
     availableCities: string[];
+    isMerged: boolean;
+    parentLineage: {
+        parents: mongoose.Types.ObjectId[];
+        mergedAt: Date;
+    };
+    hiddenByMerge: boolean;
     createdAt: Date;
     updatedAt: Date;
 }
@@ -83,7 +89,15 @@ const BucketSchema = new Schema({
     // Auto-Discovered Metadata (Cached for O(1) Access)
     availableHeaders: { type: [String], default: [] },
     availableStates: { type: [String], default: [] },
-    availableCities: { type: [String], default: [] }
+    availableCities: { type: [String], default: [] },
+
+    // Lineage & Merge Tracking
+    isMerged: { type: Boolean, default: false },
+    parentLineage: {
+        parents: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Bucket' }],
+        mergedAt: { type: Date }
+    },
+    hiddenByMerge: { type: Boolean, default: false }
 }, { timestamps: true });
 
 const Bucket = mongoose.model<IBucket>('Bucket', BucketSchema);

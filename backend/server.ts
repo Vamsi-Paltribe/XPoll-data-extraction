@@ -89,9 +89,11 @@ import jobsRoutes from './routes/jobs';
 import recordRoutes from './routes/records';
 import explorerRoutes from './routes/explorer'; // New Route
 import agentRoutes from './routes/agent';
+import mergeRoutes from './routes/merge';
 
 app.use('/api/auth', authRoutes);
 app.use('/api/buckets', bucketRoutes);
+app.use('/api/merge', mergeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/admin', adminDataRoutes); // Merged into /api/admin
 app.use('/api/admin', uploadRoutes); // Admin uploads

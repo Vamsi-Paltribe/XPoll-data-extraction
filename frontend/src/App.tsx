@@ -1,11 +1,13 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
-import RegistryView from './pages/RegistryView';
-import Ledger from './pages/Ledger';
 import Sidebar from './components/Sidebar';
 import { Toaster } from 'sonner';
+
+// Lazy Load Pages
+const Login = lazy(() => import('./pages/Login'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const RegistryView = lazy(() => import('./pages/RegistryView'));
+const Ledger = lazy(() => import('./pages/Ledger'));
 
 // Protected Route Component
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -52,7 +54,14 @@ const AppLayout = ({ children }: { children: React.ReactNode }) => {
     <div className={`flex bg-[#f0f4f9] ${showSidebar ? 'flex-row' : ''}`}>
       {showSidebar && <Sidebar />}
       <main className={`flex-1 ${showSidebar ? 'ml-[88px] p-6 mx-auto w-full' : ''}`}>
-        {children}
+        <Suspense fallback={
+          <div className="h-screen w-full flex flex-col items-center justify-center space-y-4">
+            <div className="w-10 h-10 border-4 border-slate-200 border-t-[#2D384A] rounded-full animate-spin" />
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-400">Loading Module</p>
+          </div>
+        }>
+          {children}
+        </Suspense>
       </main>
       <Toaster position="top-right" />
     </div>

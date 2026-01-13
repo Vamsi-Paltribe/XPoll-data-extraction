@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
     Bot,
     Sparkles,
@@ -16,8 +16,10 @@ import {
 import clsx from 'clsx';
 import { useQueryClient, useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
-import ReviewExtractionModal from './ReviewExtractionModal';
-import QueryResultModal from './QueryResultModal';
+
+// Lazy Components
+const ReviewExtractionModal = lazy(() => import('./ReviewExtractionModal'));
+const QueryResultModal = lazy(() => import('./QueryResultModal'));
 
 const toastHelper = {
     success: (msg: string) => console.log('Items Success:', msg),
@@ -555,8 +557,6 @@ const AgentConsole = ({ bucketId, initialFile }: AgentConsoleProps) => {
                                             <>
                                                 {msg.queryResult && (
                                                     <div className="mt-3">
-                                                        {/* --- UNIFIED DATA DISPLAY SYSTEM --- */}
-
                                                         {/* SCENARIO A: SINGLE RECORD HIGHLIGHT (1-to-1 Answer) */}
                                                         {!msg.queryResult.summary && msg.queryResult.data?.length === 1 && (
                                                             <div
@@ -851,28 +851,30 @@ const AgentConsole = ({ bucketId, initialFile }: AgentConsoleProps) => {
             </div>
 
             {/* Modal Injection */}
-            {selectedReviewJob && (
-                <div className="absolute inset-0 z-50">
-                    <ReviewExtractionModal
-                        job={selectedReviewJob}
-                        onClose={() => setSelectedReviewJob(null)}
-                        onApprove={(jobId: string) => {
-                            approveMutation.mutate(jobId);
-                        }}
-                        onReject={(id: string) => rejectMutation.mutate(id)}
-                        isProcessing={approveMutation.isPending || rejectMutation.isPending}
-                    />
-                </div>
-            )}
+            <Suspense fallback={null}>
+                {selectedReviewJob && (
+                    <div className="absolute inset-0 z-50">
+                        <ReviewExtractionModal
+                            job={selectedReviewJob}
+                            onClose={() => setSelectedReviewJob(null)}
+                            onApprove={(jobId: string) => {
+                                approveMutation.mutate(jobId);
+                            }}
+                            onReject={(id: string) => rejectMutation.mutate(id)}
+                            isProcessing={approveMutation.isPending || rejectMutation.isPending}
+                        />
+                    </div>
+                )}
 
-            <QueryResultModal
-                isOpen={queryModalOpen}
-                onClose={() => setQueryModalOpen(false)}
-                queryPrompt={queryModalData.prompt}
-                records={queryModalData.records}
-                pagination={queryModalData.pagination}
-                onPageChange={handleQueryPageChange}
-            />
+                <QueryResultModal
+                    isOpen={queryModalOpen}
+                    onClose={() => setQueryModalOpen(false)}
+                    queryPrompt={queryModalData.prompt}
+                    records={queryModalData.records}
+                    pagination={queryModalData.pagination}
+                    onPageChange={handleQueryPageChange}
+                />
+            </Suspense>
         </div>
     );
 };

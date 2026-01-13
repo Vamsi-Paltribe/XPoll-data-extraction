@@ -8,6 +8,7 @@ export interface ITokenLedger extends Document {
     amount: number;
     reason: string;
     bucketId?: IBucket['_id'];
+    bucketName?: string;
     timestamp: Date;
     createdAt: Date;
     updatedAt: Date;
@@ -19,6 +20,7 @@ const TokenLedgerSchema = new Schema({
     amount: { type: Number, required: true },
     reason: { type: String, required: true }, // e.g., 'Cloud Sync', 'Add Parameter', 'Recharge'
     bucketId: { type: mongoose.Schema.Types.ObjectId, ref: 'Bucket' },
+    bucketName: { type: String },
     timestamp: { type: Date, default: Date.now }
 }, { timestamps: true });
 

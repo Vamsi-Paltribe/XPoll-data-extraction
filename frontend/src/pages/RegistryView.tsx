@@ -1,9 +1,7 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
-import SyncModal from '../components/SyncModal';
-import GlobalStyles from '../components/GlobalStyles';
 import {
     ArrowLeft,
     ChevronRight,
@@ -12,10 +10,20 @@ import {
     Clock, UploadCloud
 } from 'lucide-react';
 
-import DataGrid from '../components/DataGrid';
-import AgentConsole from '../components/AgentConsole';
-import SchemaSettings from '../components/SchemaSettings';
-import ReviewExtractionModal from '../components/ReviewExtractionModal';
+import GlobalStyles from '../components/GlobalStyles';
+
+// Lazy Components
+const SyncModal = lazy(() => import('../components/SyncModal'));
+const DataGrid = lazy(() => import('../components/DataGrid'));
+const AgentConsole = lazy(() => import('../components/AgentConsole'));
+const SchemaSettings = lazy(() => import('../components/SchemaSettings'));
+const ReviewExtractionModal = lazy(() => import('../components/ReviewExtractionModal'));
+
+const ComponentLoader = () => (
+    <div className="flex items-center justify-center p-12 opacity-50">
+        <div className="w-6 h-6 border-2 border-slate-200 border-t-[#2D384A] rounded-full animate-spin" />
+    </div>
+);
 
 // --- Interfaces ---
 interface RegistryParameter {
@@ -140,28 +148,22 @@ const RegistryView = () => {
 
     const approvalJobs = jobs?.filter(j => j.status === 'waiting_approval') || [];
 
-    // --- Data Filtering for Display ---
-    // Note: If 'approvals' filter is active, we show jobs. 
-    // If 'all' filter is active, we show paginated customer records.
-    // If 'flagged' filter was active (removed), we would need backend filter.
-    // For now, client side filtering of the *current page* text search is handled in DataGrid.
-    // Ideally text search should also be server side, but keeping it simple for now as per prompt "pagination".
-
     // --- Mutations ---
     const syncMutation = useMutation({
         mutationFn: (filters: any) => api.post(`/buckets/${id}/sync`, { filters }),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['registry-customers', id] });
             queryClient.invalidateQueries({ queryKey: ['registry', id] });
+            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', id] });
             setShowSyncModal(false);
-            window.alert('Sync started successfully');
         }
     });
 
     const approveMutation = useMutation({
-        mutationFn: async (jobId: string) => api.post(`/jobs/${jobId}/approve`),
+        mutationFn: async ({ jobId, options }: { jobId: string, options?: any }) =>
+            api.post(`/jobs/${jobId}/approve`, options),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['bucket-jobs', id] });
+            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', id] });
             queryClient.invalidateQueries({ queryKey: ['registry-customers', id] });
             setSelectedReviewJob(null);
         },
@@ -173,7 +175,7 @@ const RegistryView = () => {
     const rejectMutation = useMutation({
         mutationFn: async (jobId: string) => api.post(`/jobs/${jobId}/reject`),
         onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['bucket-jobs', id] });
+            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', id] });
             setSelectedReviewJob(null);
         }
     });
@@ -286,7 +288,7 @@ const RegistryView = () => {
                         onClick={() => setShowSyncModal(true)}
                         className="bg-white text-[#2D384A] px-5 py-2.5 rounded-[16px] text-xs font-bold uppercase tracking-wider hover:shadow-lg transition-all flex items-center gap-2 border border-slate-200"
                     >
-                        <Clock size={16} className="text-[#F7A25A]" /> Sync
+                        <Clock size={16} className="text-[#F7A25A]" /> Download Data
                     </button>
                     <button className="bg-[#2D384A] text-white px-5 py-2.5 rounded-[16px] text-xs font-bold uppercase tracking-wider hover:shadow-lg hover:shadow-[#2D384A]/20 transition-all flex items-center gap-2">
                         <Download size={16} /> Export
@@ -298,71 +300,78 @@ const RegistryView = () => {
             <div className="flex-1 grid grid-cols-12 gap-6 overflow-hidden">
                 {/* LEFT: Data Truth (55% -> 7 cols) */}
                 <div className="col-span-12 lg:col-span-7 h-full flex flex-col overflow-hidden">
-                    {viewMode === 'grid' ? (
-                        <DataGrid
-                            records={customerRecords}
-                            columns={getDisplayColumns()}
-                            totalCount={totalRecords}
+                    <Suspense fallback={<ComponentLoader />}>
+                        {viewMode === 'grid' ? (
+                            <DataGrid
+                                records={customerRecords}
+                                columns={getDisplayColumns()}
+                                totalCount={totalRecords}
 
-                            // Pagination
-                            onNextPage={customerData?.page && customerData.page < customerData.totalPages ? onNextPage : undefined}
-                            onPrevPage={page > 1 ? onPrevPage : undefined}
-                            pageInfo={`Page ${page} of ${customerData?.totalPages || 1}`}
+                                // Pagination
+                                onNextPage={customerData?.page && customerData.page < customerData.totalPages ? onNextPage : undefined}
+                                onPrevPage={page > 1 ? onPrevPage : undefined}
+                                pageInfo={`Page ${page} of ${customerData?.totalPages || 1}`}
 
-                            // Filters
-                            activeFilter={activeFilter}
-                            onFilterChange={setActiveFilter}
+                                // Filters
+                                activeFilter={activeFilter}
+                                onFilterChange={setActiveFilter}
 
-                            // Features
-                            onSettingsClick={() => setViewMode('schema')}
+                                // Features
+                                onSettingsClick={() => setViewMode('schema')}
 
-                            // Approvals
-                            approvalJobs={approvalJobs}
-                            onReviewJob={(job) => setSelectedReviewJob(job as Job)}
-                        />
-                    ) : registry ? (
-                        <SchemaSettings
-                            registry={registry}
-                            bucketId={id || ''}
-                            onBack={() => setViewMode('grid')}
-                        />
-                    ) : (
-                        <div>Loading Settings...</div>
-                    )}
+                                // Approvals
+                                approvalJobs={approvalJobs}
+                                onReviewJob={(job) => setSelectedReviewJob(job as Job)}
+                            />
+                        ) : registry ? (
+                            <SchemaSettings
+                                registry={registry}
+                                bucketId={id || ''}
+                                onBack={() => setViewMode('grid')}
+                            />
+                        ) : (
+                            <div>Loading Settings...</div>
+                        )}
+                    </Suspense>
                 </div>
 
                 {/* RIGHT: Agent Brain (45% -> 5 cols) */}
                 <div className="col-span-12 lg:col-span-5 h-full flex flex-col overflow-hidden">
-                    <AgentConsole
-                        bucketId={id}
-                        userTokens={user?.tokens}
-                        initialFile={droppedFile}
-                    />
+                    <Suspense fallback={<ComponentLoader />}>
+                        <AgentConsole
+                            bucketId={id}
+                            userTokens={user?.tokens}
+                            initialFile={droppedFile}
+                        />
+                    </Suspense>
                 </div>
             </div>
 
-            <SyncModal
-                isOpen={showSyncModal}
-                onClose={() => setShowSyncModal(false)}
-                onSync={(filters: any) => syncMutation.mutate(filters)}
-                isSyncing={syncMutation.isPending}
-            />
-
-            {/* Centralized Review Modal */}
-            {selectedReviewJob && (
-                <div className="absolute inset-0 z-50">
-                    <ReviewExtractionModal
-                        job={selectedReviewJob}
-                        onClose={() => setSelectedReviewJob(null)}
-                        onApprove={(jobId: string) => {
-                            approveMutation.mutate(jobId);
-                            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', id] });
-                        }}
-                        onReject={(id: string) => rejectMutation.mutate(id)}
-                        isProcessing={approveMutation.isPending || rejectMutation.isPending}
+            <Suspense fallback={null}>
+                {showSyncModal && (
+                    <SyncModal
+                        isOpen={showSyncModal}
+                        onClose={() => setShowSyncModal(false)}
+                        onSync={(filters: any) => syncMutation.mutate(filters)}
+                        isSyncing={syncMutation.isPending}
                     />
-                </div>
-            )}
+                )}
+
+                {/* Centralized Review Modal */}
+                {selectedReviewJob && (
+                    <div className="absolute inset-0 z-50">
+                        <ReviewExtractionModal
+                            job={selectedReviewJob}
+                            onClose={() => setSelectedReviewJob(null)}
+                            onApprove={(jobId: string, options?: any) => {
+                                approveMutation.mutate({ jobId, options });
+                            }}
+                            onReject={(id: string) => rejectMutation.mutate(id)}
+                            isProcessing={approveMutation.isPending || rejectMutation.isPending}
+                        />
+                    </div>
+                )}
+            </Suspense>
         </div>
     );
 };

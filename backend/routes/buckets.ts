@@ -36,7 +36,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         const buckets = await Bucket.aggregate([
             {
                 $match: {
-                    createdBy: new mongoose.Types.ObjectId(req.user.id)
+                    createdBy: new mongoose.Types.ObjectId(req.user.id),
+                    hiddenByMerge: { $ne: true }
                 }
             },
             {
@@ -214,9 +215,9 @@ router.post('/:id/sync', async (req: AuthRequest, res: Response) => {
 
         const cloudRecords = await fetchGlobalRecords(filters);
 
-        // --- NEW TOKEN STRATEGY: 1 Token per 100 records (minimum 1) ---
+        // --- NEW TOKEN STRATEGY: 0.5 Tokens per row ---
         const recordCount = cloudRecords.length;
-        const totalCost = Math.max(1, Math.ceil(recordCount / 100));
+        const totalCost = recordCount * 0.5;
 
         if (user.tokens < totalCost) {
             return res.status(403).json({ error: `Insufficient tokens. Syncing ${recordCount} records costs ${totalCost} coins. Your balance: ${user.tokens}` });
@@ -238,8 +239,9 @@ router.post('/:id/sync', async (req: AuthRequest, res: Response) => {
             userId: user._id,
             type: 'debit',
             amount: totalCost,
-            reason: `Cloud Sync (${recordCount} records)`,
-            bucketId: bucket._id
+            reason: `Cloud Sync (${recordCount} records @ 0.5/row)`,
+            bucketId: bucket._id,
+            bucketName: bucket.name
         });
         await ledgerEntry.save();
 
@@ -466,23 +468,41 @@ router.post('/:id/upload', upload.single('file'), async (req: AuthRequest, res: 
 
         const extractedData = result.data; // Grouped by State
 
-        // 1.5. Aggregate unique cities for batch metadata
-        const allCities = new Set<string>();
-        Object.values(extractedData).forEach((records: any) => {
-            records.forEach((r: any) => {
-                const city = r.City || r.city || r.CITY;
-                if (city) allCities.add(city);
+        // --- NEW TOKEN STRATEGY: 1.0 Token per row ---
+        const totalRows = Object.values(extractedData).reduce((acc: number, records: any) => acc + records.length, 0);
+        const extractionCost = totalRows * 1.0;
+
+        const user = await User.findById(req.user.id);
+        if (!user) throw new Error("User context lost");
+
+        if (user.tokens < extractionCost) {
+            return res.status(403).json({
+                error: `Insufficient tokens. Extracted ${totalRows} rows requires ${extractionCost} coins. Balance: ${user.tokens}.`
             });
+        }
+
+        // Deduct Tokens & Log Ledger
+        user.tokens -= extractionCost;
+        await user.save();
+
+        const ledgerEntry = new TokenLedger({
+            userId: user._id,
+            type: 'debit',
+            amount: extractionCost,
+            reason: `AI Extraction (${totalRows} rows @ 1.0/row)`,
+            bucketId: bucket._id,
+            bucketName: bucket.name
         });
+        await ledgerEntry.save();
 
         // 2. Create a new SyncBatch
         const batch = new SyncBatch({
             bucketId: bucket._id,
             status: 'pending',
-            recordCount: 0,
+            recordCount: totalRows,
             filters: {
                 states: Object.keys(extractedData),
-                cities: Array.from(allCities)
+                cities: []
             }
         });
         await batch.save();

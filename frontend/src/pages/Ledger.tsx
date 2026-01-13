@@ -16,6 +16,7 @@ interface LedgerEntry {
     reason: string;
     amount: number;
     bucketId?: { name: string };
+    bucketName?: string;
 }
 
 const Ledger = () => {
@@ -46,7 +47,7 @@ const Ledger = () => {
 
 
     return (
-        <div className="max-w-5xl mx-auto">
+        <div className="mx-auto">
             <header className="mb-6">
                 <h1 className="text-3xl font-bold text-slate-900 tracking-tight mb-2">My Wallet</h1>
                 <p className="text-slate-500 font-medium">Manage your token balance and view transaction history.</p>
@@ -132,9 +133,9 @@ const Ledger = () => {
                                         <td className="px-8 py-6">
                                             <div className="flex flex-col">
                                                 <span className="text-sm font-bold text-slate-900">{log.reason}</span>
-                                                {log.bucketId && (
+                                                {(log.bucketName || log.bucketId?.name) && (
                                                     <span className="text-[10px] font-bold text-slate-400 uppercase mt-0.5">
-                                                        Bucket:{log.bucketId.name}
+                                                        Bucket: {log.bucketName || log.bucketId?.name}
                                                     </span>
                                                 )}
                                             </div>

@@ -77,11 +77,13 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
                 {/* Header */}
                 <div className="px-8 py-6 border-b border-slate-100 flex justify-between items-center bg-white shrink-0">
                     <div className="flex items-center gap-4">
-                        <div className="p-3 bg-purple-50 rounded-2xl">
-                            <LayoutTemplate className="w-6 h-6 text-purple-600" />
+                        <div className={`p-3 ${job.mimeType === 'application/x-sync' ? 'bg-blue-50' : 'bg-purple-50'} rounded-2xl`}>
+                            <LayoutTemplate className={`w-6 h-6 ${job.mimeType === 'application/x-sync' ? 'text-blue-600' : 'text-purple-600'}`} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-slate-900 uppercase tracking-tight">Review Extraction</h2>
+                            <h2 className="text-xl font-bold text-slate-900 uppercase tracking-tight">
+                                {job.mimeType === 'application/x-sync' ? 'Review Cloud Sync' : 'Review Extraction'}
+                            </h2>
                             <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest mt-1">
                                 Verifying <span className="text-slate-900">{job.originalName}</span> • {pagination.total} records detected
                             </p>
@@ -99,7 +101,7 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
                 {/* Content Area */}
                 <div className="flex-1 flex flex-col min-h-0 bg-white">
                     {/* Schema Mapping Summary Overlay (Mini) */}
-                    {job.result?.detectedMapping && Object.keys(job.result.detectedMapping).length > 0 && (
+                    {job.mimeType !== 'application/x-sync' && job.result?.detectedMapping && Object.keys(job.result.detectedMapping).length > 0 && (
                         <div className="px-8 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-6 overflow-x-auto no-scrollbar shrink-0">
                             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap px-2">Active Mapping:</span>
                             {Object.entries(job.result.detectedMapping).map(([source, target]: [string, any]) => (
