@@ -2,6 +2,7 @@ import express, { Request, Response } from 'express';
 import Job from '../models/Job';
 import { commitDataToRegistry } from '../services/commitService';
 import auth from '../middleware/auth';
+import { StagingRecord } from '../models/StagingRecord';
 
 const router = express.Router();
 
@@ -142,17 +143,33 @@ router.get('/:id/records', auth, async (req: Request, res: Response) => {
         const limit = parseInt(req.query.limit as string) || 20;
         const skip = (page - 1) * limit;
 
-        // Find Record model
-        // @ts-ignore
-        const { default: RecordModel } = await import('../models/Record');
+        const job = await Job.findById(req.params.id);
+        if (!job) return res.status(404).json({ error: 'Job not found' });
 
-        const [records, total] = await Promise.all([
-            RecordModel.find({ jobId: req.params.id })
-                .sort({ createdAt: 1 })
-                .skip(skip)
-                .limit(limit),
-            RecordModel.countDocuments({ jobId: req.params.id })
-        ]);
+        let records, total;
+
+        if (job.mimeType === 'application/x-sync') {
+            const batchId = job.result?.batchId;
+            [records, total] = await Promise.all([
+                StagingRecord.find({ batchId })
+                    .sort({ createdAt: 1 })
+                    .skip(skip)
+                    .limit(limit),
+                StagingRecord.countDocuments({ batchId })
+            ]);
+        } else {
+            // Find Record model
+            // @ts-ignore
+            const { default: RecordModel } = await import('../models/Record');
+
+            [records, total] = await Promise.all([
+                RecordModel.find({ jobId: req.params.id })
+                    .sort({ createdAt: 1 })
+                    .skip(skip)
+                    .limit(limit),
+                RecordModel.countDocuments({ jobId: req.params.id })
+            ]);
+        }
 
         res.json({
             records,
@@ -210,12 +227,14 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
         // --- OPTIMIZATION END ---
 
         // Execute Commit Logic
+        // @ts-ignore
         const result = await commitDataToRegistry({
-            userId: 'ADMIN_JOB_USER',
+            userId: req.user?.id || 'ADMIN_JOB_USER',
             extractedData: dataToCommit,
             jobId: req.params.id, // Pass Job ID for Scalable Mode
             targetBucketId: job.bucketId, // Pass Target Bucket ID
-            defaultState: manualState // Pass default state to commit service
+            defaultState: manualState, // Pass default state to commit service
+            isSyncJob: job.mimeType === 'application/x-sync' // Pass flag for sync jobs
         });
 
         console.log('[Jobs API] Commit successful');

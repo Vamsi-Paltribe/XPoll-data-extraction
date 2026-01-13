@@ -5,6 +5,7 @@ import { ParsingTemplate } from '../models/ParsingTemplate';
 
 import Job from '../models/Job';
 import RecordModel from '../models/Record'; // Import Record Model
+import { StagingRecord } from '../models/StagingRecord';
 
 interface CommitOptions {
     userId: string;
@@ -16,6 +17,7 @@ interface CommitOptions {
     logic?: any;
     signature?: string;
     defaultState?: string; // Manual override from UI
+    isSyncJob?: boolean;   // Flag for sync-based jobs
 }
 
 export const commitDataToRegistry = async (options: CommitOptions) => {
@@ -30,12 +32,19 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
     if (jobId) {
         console.log(`[Commit Service] 🚀 Scalable Commit Mode for Job ${jobId}. Target: ${targetBucketId || 'Global'}`);
 
+        const job = await Job.findById(jobId);
+        if (!job) throw new Error("Job not found");
+
+        const isSync = options.isSyncJob || job.mimeType === 'application/x-sync';
+        const DataModel: any = isSync ? StagingRecord : RecordModel;
+        const query: any = isSync ? { batchId: job.result?.batchId } : { jobId };
+
         // We will process in batches to keep memory low
         const BATCH_SIZE = 2000;
-        const totalJobRecords = await RecordModel.countDocuments({ jobId });
-        console.log(`[Commit Service] Found ${totalJobRecords} records in RecordModel for Job ${jobId}`);
+        const totalJobRecords = await DataModel.countDocuments(query);
+        console.log(`[Commit Service] Found ${totalJobRecords} records in ${isSync ? 'StagingRecord' : 'RecordModel'} for Job ${jobId}`);
 
-        let cursor = RecordModel.find({ jobId }).cursor({ batchSize: BATCH_SIZE });
+        let cursor = DataModel.find(query).cursor({ batchSize: BATCH_SIZE });
 
         let batch: any[] = [];
 
@@ -84,7 +93,6 @@ export const commitDataToRegistry = async (options: CommitOptions) => {
         if (batch.length > 0) {
             await processBatch(batch);
         }
-
     }
     // CASE 2: LEGACY/DIRECT MODE (extractedData payload)
     else if (extractedData) {

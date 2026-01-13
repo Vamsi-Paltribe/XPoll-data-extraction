@@ -11,6 +11,7 @@ import { TokenLedger } from '../models/TokenLedger';
 import multer from 'multer';
 import { processDocumentWithOpenAI } from '../services/openaiProcessor';
 import { OpenAI } from 'openai';
+import Job from '../models/Job';
 
 const router = express.Router();
 
@@ -245,7 +246,19 @@ router.post('/:id/sync', async (req: AuthRequest, res: Response) => {
         });
         await ledgerEntry.save();
 
-        res.json({ msg: 'Sync successful', result, currentTokens: user.tokens });
+        // CREATE VIRTUAL JOB FOR REVIEW
+        const job = new Job({
+            bucketId: bucket._id,
+            originalName: `Sync: ${bucket.name} (${recordCount} records)`,
+            mimeType: 'application/x-sync',
+            status: 'waiting_approval',
+            rowsProcessed: recordCount,
+            tokensConsumed: totalCost,
+            result: { batchId: result.batchId }
+        });
+        await job.save();
+
+        res.json({ msg: 'Sync successful', result, currentTokens: user.tokens, jobId: job._id });
     } catch (err: any) {
         console.error(err);
         res.status(500).json({ error: err.message });

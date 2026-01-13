@@ -13,7 +13,9 @@ import {
     Layers,
     RotateCcw,
     AlertTriangle,
-    CheckCircle2
+    CheckCircle2,
+    List,
+    Layout
 } from 'lucide-react';
 import {
     DndContext,
@@ -101,7 +103,69 @@ const BucketCard = memo(({
     );
 });
 
-const DraggableDroppableBucket = ({ bucket, isMergeMode, navigate, setUnmergingBucketId }: any) => {
+const BucketListRow = memo(({
+    bucket,
+    isMergeMode,
+    isDraggedOver,
+    onNavigate,
+    onUnmerge,
+    attributes,
+    listeners,
+    setNodeRef,
+    style,
+    isDragging
+}: any) => {
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            {...attributes}
+            {...listeners}
+            onClick={() => !isMergeMode && onNavigate(bucket._id)}
+            className={`bg-white px-6 py-4 rounded-2xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-md transition-all duration-200 group flex items-center gap-6 ${isMergeMode ? "ring-2 ring-indigo-500/10" : ""} ${isDraggedOver ? "ring-2 ring-indigo-500 bg-indigo-50/30 scale-[1.01]" : ""} ${isDragging ? "opacity-0" : "opacity-100"}`}
+        >
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${bucket.isMerged ? "bg-indigo-600 text-white" : "bg-slate-50 text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors"}`}>
+                {bucket.isMerged ? <Layers size={18} /> : <Database size={18} />}
+            </div>
+
+            <div className="flex-1 min-w-0">
+                <h3 className="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{bucket.name}</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 mt-0.5">
+                    <Clock size={10} />
+                    {bucket.lastSyncedAt ? new Date(bucket.lastSyncedAt).toLocaleDateString() : 'New Node'}
+                </p>
+            </div>
+
+            <div className="hidden md:flex flex-col items-end px-8 border-x border-slate-50">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Records</p>
+                <p className="text-lg font-bold text-slate-800 tracking-tight">{(bucket.recordCount || 0).toLocaleString()}</p>
+            </div>
+
+            <div className="flex items-center gap-4 shrink-0">
+                <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${bucket.status === 'paused' ? "bg-slate-50 text-slate-400 border-slate-100" : "bg-emerald-50 text-emerald-600 border-emerald-100"}`}>
+                    {bucket.status || 'Active'}
+                </div>
+                {bucket.isMerged && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onUnmerge(bucket._id);
+                        }}
+                        className="p-2 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-lg transition-all"
+                        title="Unmerge"
+                    >
+                        <RotateCcw size={14} />
+                    </button>
+                )}
+                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                    <ArrowUp className="rotate-45" size={14} strokeWidth={3} />
+                </div>
+            </div>
+        </div>
+    );
+});
+
+const DraggableDroppableBucket = ({ bucket, isMergeMode, navigate, setUnmergingBucketId, viewType }: any) => {
     const {
         attributes,
         listeners,
@@ -131,20 +195,20 @@ const DraggableDroppableBucket = ({ bucket, isMergeMode, navigate, setUnmergingB
         zIndex: isDragging ? 100 : 1,
     };
 
-    return (
-        <BucketCard
-            bucket={bucket}
-            isMergeMode={isMergeMode}
-            isDraggedOver={isOver && !isDragging}
-            onNavigate={(id: string) => navigate(`/registry/${id}`)}
-            onUnmerge={(id: string) => setUnmergingBucketId(id)}
-            attributes={attributes}
-            listeners={listeners}
-            setNodeRef={setNodeRefs}
-            style={style}
-            isDragging={isDragging}
-        />
-    );
+    const props = {
+        bucket,
+        isMergeMode,
+        isDraggedOver: isOver && !isDragging,
+        onNavigate: (id: string) => navigate(`/registry/${id}`),
+        onUnmerge: (id: string) => setUnmergingBucketId(id),
+        attributes,
+        listeners,
+        setNodeRef: setNodeRefs,
+        style,
+        isDragging
+    };
+
+    return viewType === 'grid' ? <BucketCard {...props} /> : <BucketListRow {...props} />;
 };
 
 const Dashboard = () => {
@@ -161,6 +225,9 @@ const Dashboard = () => {
     // Unmerge states
     const [unmergingBucketId, setUnmergingBucketId] = useState<string | null>(null);
     const [newDataAction, setNewDataAction] = useState<'duplicate' | 'keep_in_a' | 'keep_in_b' | 'isolate' | 'discard'>('duplicate');
+
+    // View States
+    const [viewType, setViewType] = useState<'grid' | 'list'>('grid');
     const { data: user } = useQuery({
         queryKey: ['user-me'],
         queryFn: async () => {
@@ -306,6 +373,21 @@ const Dashboard = () => {
                             onChange={(e) => setSearchQuery(e.target.value)}
                         />
                     </div>
+                    <div className="flex bg-white rounded-2xl border border-slate-100 p-1 shadow-sm">
+                        <button
+                            onClick={() => setViewType('grid')}
+                            className={`p-2 rounded-xl transition-all ${viewType === 'grid' ? "bg-slate-900 text-white shadow-lg" : "text-slate-400 hover:bg-slate-50"}`}
+                        >
+                            <Layout size={18} />
+                        </button>
+                        <button
+                            onClick={() => setViewType('list')}
+                            className={`p-2 rounded-xl transition-all ${viewType === 'list' ? "bg-slate-900 text-white shadow-lg" : "text-slate-400 hover:bg-slate-50"}`}
+                        >
+                            <List size={18} />
+                        </button>
+                    </div>
+
                     <button
                         onClick={() => setShowModal(true)}
                         className="bg-[#2D384A] text-white px-6 py-3 rounded-[20px] text-xs font-bold uppercase tracking-widest hover:bg-black transition-all shadow-lg shadow-[#2D384A]/10 flex items-center gap-2 group hover:-translate-y-1 active:translate-y-0"
@@ -342,7 +424,10 @@ const Dashboard = () => {
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
             >
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 pb-20">
+                <div className={viewType === 'grid'
+                    ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 pb-20"
+                    : "flex flex-col gap-4 pb-20 max-w-5xl mx-auto"
+                }>
                     {filteredRegistries.map(bucket => (
                         <DraggableDroppableBucket
                             key={bucket._id}
@@ -350,6 +435,7 @@ const Dashboard = () => {
                             isMergeMode={isMergeMode}
                             navigate={navigate}
                             setUnmergingBucketId={setUnmergingBucketId}
+                            viewType={viewType}
                         />
                     ))}
                 </div>
