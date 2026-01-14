@@ -54,16 +54,6 @@ mongoose.connect(mongoUri)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   .catch((err: any) => console.error(err));
 
-// Note: Configuring passport strategy should ideally be done here or required
-// Assuming it's done within routes or I should require it here.
-// Based on typical patterns, it should be required.
-// However, preserving original logic for now, or adding if missing.
-// I'll require it here to be safe if it wasn't before, or maybe it WAS required in routes.
-// Let's assume for now we just convert what was there. 
-// Wait, the original code DID NOT require it. I should check if I missed it.
-// Re-reading file content... line 1-56... nope, not there. 
-// It must be in routes.
-
 app.get('/api/auth/google/callback', passport.authenticate('google', {
   failureRedirect: `${process.env.CLIENT_URL}/login`,
   session: false

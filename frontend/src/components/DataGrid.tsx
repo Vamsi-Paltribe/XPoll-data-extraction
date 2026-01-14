@@ -39,6 +39,15 @@ interface DataGridProps {
     // Approvals
     approvalJobs?: Job[];
     onReviewJob?: (job: Job) => void;
+
+    // Pagination Object Support
+    pagination?: {
+        page: number;
+        limit: number;
+        total: number;
+        pages: number;
+    };
+    onPageChange?: (newPage: number) => void;
 }
 
 const DataGrid = ({
@@ -48,6 +57,8 @@ const DataGrid = ({
     onPrevPage,
     totalCount,
     pageInfo,
+    pagination,
+    onPageChange,
     activeFilter = 'all',
     onFilterChange,
     onSettingsClick,
@@ -57,7 +68,7 @@ const DataGrid = ({
 
     // --- Local Filter Logic (The "Useful" Filter Button) ---
     const [showFilters, setShowFilters] = useState(false);
-    const [columnFilters, setColumnFilters] = useState<Record<string, string>>({});
+    const [columnFilters, setColumnFilters] = useState<{ [key: string]: string }>({});
 
     const handleColumnFilterChange = (col: string, val: string) => {
         setColumnFilters(prev => ({ ...prev, [col]: val }));
@@ -177,6 +188,31 @@ const DataGrid = ({
         );
     };
 
+    // --- Pagination Logic Normalization ---
+    const handleNext = () => {
+        if (onPageChange && pagination) {
+            onPageChange(pagination.page + 1);
+        } else if (onNextPage) {
+            onNextPage();
+        }
+    };
+
+    const handlePrev = () => {
+        if (onPageChange && pagination) {
+            onPageChange(pagination.page - 1);
+        } else if (onPrevPage) {
+            onPrevPage();
+        }
+    };
+
+    const canNext = pagination ? pagination.page < pagination.pages : !!onNextPage;
+    const canPrev = pagination ? pagination.page > 1 : !!onPrevPage;
+
+    const displayPageInfo = pagination
+        ? `Page ${pagination.page} of ${pagination.pages} (Total: ${pagination.total})`
+        : pageInfo || `Showing ${filteredRecords.length} records`;
+
+    const displayTotal = pagination ? pagination.total : totalCount;
 
     return (
         <div className="h-full bg-white rounded-[32px] shadow-[0px_4px_30px_rgba(0,0,0,0.03)] border border-slate-50 flex flex-col overflow-hidden">
@@ -229,19 +265,19 @@ const DataGrid = ({
             {/* Footer Pagination (Only show on grid view) */}
             {activeFilter === 'all' && (
                 <div className="p-4 border-t border-slate-50 flex justify-between items-center bg-white text-xs font-bold text-slate-400 px-8">
-                    <span>{pageInfo || `Showing ${filteredRecords.length} records`} </span>
-                    <span>Total: {totalCount}</span>
+                    <span>{displayPageInfo}</span>
+                    {displayTotal !== undefined && <span>Total: {displayTotal}</span>}
                     <div className="flex gap-2">
                         <button
-                            onClick={onPrevPage}
-                            disabled={!onPrevPage}
+                            onClick={handlePrev}
+                            disabled={!canPrev}
                             className="px-3 py-1 bg-[#F8F9FA] rounded-lg hover:bg-slate-200 text-[#2D384A] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Prev
                         </button>
                         <button
-                            onClick={onNextPage}
-                            disabled={!onNextPage}
+                            onClick={handleNext}
+                            disabled={!canNext}
                             className="px-3 py-1 bg-[#F8F9FA] rounded-lg hover:bg-slate-200 text-[#2D384A] disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             Next
@@ -254,3 +290,4 @@ const DataGrid = ({
 };
 
 export default DataGrid;
+
