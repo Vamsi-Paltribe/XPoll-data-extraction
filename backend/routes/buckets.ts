@@ -428,7 +428,7 @@ router.get('/:id/stats/states', async (req: Request, res: Response) => {
             return res.json({});
         }
         const stats = await CustomerRecord.aggregate([
-            { $match: { bucketId: new mongoose.Types.ObjectId(req.params.id) } },
+            { $match: { bucketId: new mongoose.Types.ObjectId(req.params.id as string) } },
             {
                 $group: {
                     _id: { $toUpper: "$data.State" },

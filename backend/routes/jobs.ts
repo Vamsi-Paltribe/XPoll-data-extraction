@@ -218,20 +218,12 @@ router.post('/:id/approve', async (req: Request, res: Response) => {
             await BucketModule.Bucket.findByIdAndUpdate(job.bucketId, {
                 $addToSet: { availableStates: manualState }
             });
-
-            // 2. Inject State into Records (if missing)
-            // Note: commitDataToRegistry handles data commitment. We might need to map it there.
-            // But simpler: If dataToCommit is grouped, we can inject it.
-            // OR rely on commitService to handle defaults.
         }
-        // --- OPTIMIZATION END ---
-
-        // Execute Commit Logic
         // @ts-ignore
         const result = await commitDataToRegistry({
-            userId: req.user?.id || 'ADMIN_JOB_USER',
+            userId: (req.user as any)?.id || 'ADMIN_JOB_USER',
             extractedData: dataToCommit,
-            jobId: req.params.id, // Pass Job ID for Scalable Mode
+            jobId: req.params.id as string, // Pass Job ID for Scalable Mode
             targetBucketId: job.bucketId, // Pass Target Bucket ID
             defaultState: manualState, // Pass default state to commit service
             isSyncJob: job.mimeType === 'application/x-sync' // Pass flag for sync jobs

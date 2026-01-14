@@ -65,7 +65,7 @@ router.get('/users/:userId/buckets', async (req: Request, res: Response) => {
         }
 
         const buckets = await Bucket.aggregate([
-            { $match: { createdBy: new mongoose.Types.ObjectId(req.params.userId) } },
+            { $match: { createdBy: new mongoose.Types.ObjectId(req.params.userId as string) } },
             {
                 $lookup: {
                     from: 'customerrecords',
