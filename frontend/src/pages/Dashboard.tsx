@@ -15,7 +15,9 @@ import {
     AlertTriangle,
     CheckCircle2,
     List,
-    Layout
+    Layout,
+    ArrowUpRight,
+    Wallet
 } from 'lucide-react';
 import {
     DndContext,
@@ -29,6 +31,7 @@ import {
     defaultDropAnimationSideEffects
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
+import clsx from 'clsx';
 
 // Lazy Components
 const ConsolidationWizard = lazy(() => import('../components/ConsolidationWizard'));
@@ -52,20 +55,33 @@ const BucketCard = memo(({
             {...attributes}
             {...listeners}
             onClick={() => !isMergeMode && onNavigate(bucket._id)}
-            className={`bg-white p-8 rounded-[32px] shadow-[0px_4px_20px_rgba(0,0,0,0.03)] border border-white/50 cursor-pointer hover:shadow-[0px_12px_40px_rgba(168,50,141,0.1)] transition-all duration-300 group relative overflow-hidden ${isMergeMode ? "ring-2 ring-indigo-500/10" : ""} ${isDraggedOver ? "ring-4 ring-indigo-500 scale-[1.03] shadow-2xl z-20" : ""} ${isDragging ? "opacity-0" : "opacity-100"}`}
+            className={clsx(
+                "bg-white p-5 rounded-2xl border transition-all duration-300 group relative overflow-hidden cursor-pointer",
+                "shadow-[0px_2px_8px_rgba(45,56,74,0.05)] border-[#2D384A]/10",
+                "hover:shadow-[0px_8px_24px_rgba(168,50,141,0.12)] hover:border-[#A8328D]/30",
+                isMergeMode && "ring-2 ring-[#A8328D]/10",
+                isDraggedOver && "ring-4 ring-[#A8328D] scale-[1.02] shadow-2xl z-20",
+                isDragging ? "opacity-0" : "opacity-100"
+            )}
         >
-            <div className="absolute inset-x-0 bottom-0 h-1 bg-gradient-to-r from-[#A8328D] to-[#F7A25A] opacity-0 group-hover:opacity-100 transition-opacity" />
+            {/* Hover Accent Line */}
+            <div className="absolute top-0 inset-x-0 h-1 bg-[#A8328D] opacity-0 group-hover:opacity-100 transition-opacity" />
 
-            <div className="flex justify-between items-start mb-8">
-                <div className={`w-14 h-14 rounded-[22px] flex items-center justify-center transition-all duration-300 shadow-inner ${bucket.isMerged ? "bg-indigo-600 text-white" : "bg-[#f0f4f9] text-[#2D384A]"
-                    }`}>
-                    {bucket.isMerged ? <Layers size={26} /> : <Database strokeWidth={1.5} size={26} />}
+            <div className="flex items-start justify-between mb-4">
+                <div className={clsx(
+                    "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300",
+                    bucket.isMerged ? "bg-[#2D384A] text-[#EEEEEF]" : "bg-[#EEEEEF] text-[#2D384A]"
+                )}>
+                    {bucket.isMerged ? <Layers size={18} /> : <Database size={18} />}
                 </div>
-                <div className="flex flex-col items-end gap-2">
-                    <div className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${bucket.status === 'paused'
-                        ? "bg-slate-50 text-slate-400 border-slate-100"
-                        : "bg-emerald-50 text-emerald-700 border-emerald-100"
-                        }`}>
+
+                <div className="flex flex-col items-end gap-1.5">
+                    <div className={clsx(
+                        "px-2.5 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-widest border",
+                        bucket.status === 'paused'
+                            ? "bg-slate-100 text-slate-400 border-slate-200"
+                            : "bg-emerald-50 text-emerald-600 border-emerald-200/50" // High visibility Green
+                    )}>
                         {bucket.status || 'Active'}
                     </div>
                     {bucket.isMerged && (
@@ -74,29 +90,36 @@ const BucketCard = memo(({
                                 e.stopPropagation();
                                 onUnmerge(bucket._id);
                             }}
-                            className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[9px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all flex items-center gap-1.5"
+                            className="px-2 py-1 bg-white border border-[#2D384A]/10 text-[#2D384A] rounded-md text-[8px] font-bold uppercase tracking-tighter hover:bg-[#2D384A] hover:text-white transition-all flex items-center gap-1"
                         >
-                            <RotateCcw size={10} /> Unmerge
+                            <RotateCcw size={8} /> Unmerge
                         </button>
                     )}
                 </div>
             </div>
 
-            <div className="mb-8">
-                <h3 className="text-lg font-bold text-[#2D384A] mb-2 group-hover:text-[#A8328D] transition-colors line-clamp-1">{bucket.name}</h3>
-                <p className="text-xs font-semibold text-slate-400 flex items-center gap-2 uppercase tracking-wide">
-                    <Clock size={12} className="text-[#F7A25A]" />
-                    {bucket.lastSyncedAt ? new Date(bucket.lastSyncedAt).toLocaleDateString() : 'New Node'}
-                </p>
+            <div className="mb-4">
+                <h3 title={bucket.name} className="text-sm font-bold text-[#2D384A] group-hover:text-[#A8328D] transition-colors truncate">
+                    {bucket.name}
+                </h3>
+                <div className="flex items-center gap-3 mt-1">
+                    <p className="text-[10px] font-semibold text-slate-400 flex items-center gap-1 uppercase tracking-tighter">
+                        <Clock size={10} className="text-[#A8328D]/60" />
+                        {bucket.lastSyncedAt ? new Date(bucket.lastSyncedAt).toLocaleDateString() : 'New Node'}
+                    </p>
+                </div>
             </div>
 
-            <div className="pt-6 border-t border-slate-50 flex items-center justify-between">
-                <div>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Records</p>
-                    <p className="text-2xl font-bold text-[#2D384A] tracking-tight">{(bucket.recordCount || 0).toLocaleString()}</p>
+            <div className="pt-3 border-t border-[#EEEEEF] flex items-center justify-between">
+                <div className="flex items-baseline gap-1.5">
+                    <span className="text-base font-bold text-[#2D384A]">
+                        {(bucket.recordCount || 0).toLocaleString()}
+                    </span>
+                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Records</span>
                 </div>
-                <div className="w-10 h-10 rounded-full bg-[#F8F9FA] flex items-center justify-center text-slate-400 group-hover:bg-[#A8328D] group-hover:text-white transition-all duration-300 shadow-sm">
-                    <ArrowUp className="rotate-45" size={18} strokeWidth={2.5} />
+
+                <div className="w-7 h-7 rounded-lg bg-[#EEEEEF] flex items-center justify-center text-[#2D384A]/40 group-hover:bg-[#A8328D] group-hover:text-white transition-all duration-300">
+                    <ArrowUpRight size={14} strokeWidth={3} />
                 </div>
             </div>
         </div>
@@ -122,43 +145,80 @@ const BucketListRow = memo(({
             {...attributes}
             {...listeners}
             onClick={() => !isMergeMode && onNavigate(bucket._id)}
-            className={`bg-white px-6 py-4 rounded-2xl shadow-sm border border-slate-100 cursor-pointer hover:shadow-md transition-all duration-200 group flex items-center gap-6 ${isMergeMode ? "ring-2 ring-indigo-500/10" : ""} ${isDraggedOver ? "ring-2 ring-indigo-500 bg-indigo-50/30 scale-[1.01]" : ""} ${isDragging ? "opacity-0" : "opacity-100"}`}
+            className={clsx(
+                "group relative bg-white cursor-pointer transition-all duration-200 border-b border-[#2D384A]/5 last:border-0",
+                "hover:bg-[#EEEEEF]/50 hover:z-10 px-6 py-3",
+                isMergeMode && "bg-[#A8328D]/5",
+                isDraggedOver && "bg-[#EEEEEF] ring-2 ring-inset ring-[#A8328D]/30 scale-[1.005] shadow-lg z-20",
+                isDragging ? "opacity-0" : "opacity-100"
+            )}
         >
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${bucket.isMerged ? "bg-indigo-600 text-white" : "bg-slate-50 text-slate-400 group-hover:bg-indigo-50 group-hover:text-indigo-600 transition-colors"}`}>
-                {bucket.isMerged ? <Layers size={18} /> : <Database size={18} />}
-            </div>
+            <div className="grid grid-cols-[40px_1fr_120px_100px_80px] items-center gap-4">
 
-            <div className="flex-1 min-w-0">
-                <h3 className="text-sm font-bold text-slate-800 line-clamp-1 group-hover:text-indigo-600 transition-colors uppercase tracking-tight">{bucket.name}</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2 mt-0.5">
-                    <Clock size={10} />
-                    {bucket.lastSyncedAt ? new Date(bucket.lastSyncedAt).toLocaleDateString() : 'New Node'}
-                </p>
-            </div>
-
-            <div className="hidden md:flex flex-col items-end px-8 border-x border-slate-50">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Records</p>
-                <p className="text-lg font-bold text-slate-800 tracking-tight">{(bucket.recordCount || 0).toLocaleString()}</p>
-            </div>
-
-            <div className="flex items-center gap-4 shrink-0">
-                <div className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${bucket.status === 'paused' ? "bg-slate-50 text-slate-400 border-slate-100" : "bg-emerald-50 text-emerald-600 border-emerald-100"}`}>
-                    {bucket.status || 'Active'}
+                {/* 1. ICON */}
+                <div className={clsx(
+                    "w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors",
+                    bucket.isMerged
+                        ? "bg-[#2D384A] text-[#EEEEEF]"
+                        : "bg-[#EEEEEF] text-[#2D384A]/40 group-hover:text-[#A8328D]"
+                )}>
+                    {bucket.isMerged ? <Layers size={16} /> : <Database size={16} />}
                 </div>
-                {bucket.isMerged && (
-                    <button
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            onUnmerge(bucket._id);
-                        }}
-                        className="p-2 hover:bg-red-50 text-slate-300 hover:text-red-500 rounded-lg transition-all"
-                        title="Unmerge"
-                    >
-                        <RotateCcw size={14} />
-                    </button>
-                )}
-                <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center text-slate-300 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                    <ArrowUp className="rotate-45" size={14} strokeWidth={3} />
+
+                {/* 2. NAME & META */}
+                <div className="min-w-0">
+                    <h3 className="text-sm font-bold text-[#2D384A] group-hover:text-[#A8328D] transition-colors truncate">
+                        {bucket.name}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-0.5">
+                        <p className="text-[10px] font-bold text-[#2D384A]/40 uppercase tracking-tighter flex items-center gap-1">
+                            <Clock size={10} className="text-[#A8328D]/50" />
+                            {bucket.lastSyncedAt ? new Date(bucket.lastSyncedAt).toLocaleDateString() : 'New Node'}
+                        </p>
+                    </div>
+                </div>
+
+                {/* 3. RECORDS (Fixed width keeps numbers aligned) */}
+                <div className="text-right pr-6">
+                    <p className="text-[14px] font-bold text-[#2D384A] tracking-tight leading-none">
+                        {(bucket.recordCount || 0).toLocaleString()}
+                    </p>
+                    <p className="text-[8px] font-bold text-[#2D384A]/30 uppercase tracking-widest mt-0.5">Records</p>
+                </div>
+
+                {/* 4. STATUS (Emerald Green for Active) */}
+                <div className="flex justify-center">
+                    <div className={clsx(
+                        "px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border text-center w-full max-w-[80px]",
+                        bucket.status === 'paused'
+                            ? "bg-slate-100 text-slate-400 border-slate-200"
+                            : "bg-emerald-50 text-emerald-600 border-emerald-200/50" // High visibility Green
+                    )}>
+                        {bucket.status || 'Active'}
+                    </div>
+                </div>
+
+                {/* 5. ACTIONS (Placeholder space even if empty to prevent jumping) */}
+                <div className="flex items-center justify-end gap-1 min-w-[80px]">
+                    {bucket.isMerged ? (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                onUnmerge(bucket._id);
+                            }}
+                            className="inline-flex gap-1.5 p-1.5 text-[#2D384A] hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
+                            title="Unmerge"
+                        >
+                            <RotateCcw size={14} />
+                            <span className="text-[10px] font-bold uppercase tracking-tight">Unmerge</span>
+                        </button>
+                    ) : (
+                        <div className="w-[26px]" />
+                    )}
+
+                    <div className="w-8 h-8 rounded-md flex items-center justify-center text-[#2D384A]/20 group-hover:bg-[#A8328D] group-hover:text-white transition-all duration-300">
+                        <ArrowUpRight size={16} strokeWidth={2.5} />
+                    </div>
                 </div>
             </div>
         </div>
@@ -336,22 +396,50 @@ const Dashboard = () => {
                     {/* Merge Mode Toggle */}
                     <button
                         onClick={() => setIsMergeMode(!isMergeMode)}
-                        className={`px-6 py-3 rounded-[20px] text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-3 shadow-xl ${isMergeMode
-                            ? "bg-indigo-600 text-white shadow-indigo-500/20 ring-4 ring-indigo-500/10"
-                            : "bg-white text-slate-400 hover:text-slate-900 border border-slate-100"
-                            }`}
+                        className={clsx(
+                            "group relative bg-white border border-[#2D384A]/10 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-6 min-w-[260px] text-left transition-all",
+                            isMergeMode ? "ring-2 ring-[#A8328D] bg-[#A8328D]/5" : "hover:shadow-md hover:border-[#A8328D]/30"
+                        )}
                     >
-                        <Layers size={16} />
-                        {isMergeMode ? 'Merge Mode Active' : 'Enter Merge Mode'}
+                        <div className="flex items-center gap-4">
+                            <div className={clsx(
+                                "w-12 h-12 rounded-xl flex items-center justify-center transition-all",
+                                isMergeMode ? "bg-[#A8328D] text-[#EEEEEF]" : "bg-[#EEEEEF] text-[#2D384A]/40 group-hover:text-[#A8328D]"
+                            )}>
+                                <Layers size={24} />
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold text-[#2D384A]/40 uppercase tracking-widest">Consolidation</p>
+                                <div className="flex items-center gap-2">
+                                    <span className={clsx("text-base font-bold transition-colors", isMergeMode ? "text-[#A8328D]" : "text-[#2D384A]")}>
+                                        {isMergeMode ? 'Drag to Merge' : 'Enable Merge'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Visual Toggle Switch */}
+                        <div className={clsx(
+                            "w-10 h-6 rounded-full relative transition-colors duration-300",
+                            isMergeMode ? "bg-[#A8328D]" : "bg-slate-200 group-hover:bg-slate-300"
+                        )}>
+                            <div className={clsx(
+                                "absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300",
+                                isMergeMode ? "translate-x-4" : "translate-x-0"
+                            )} />
+                        </div>
                     </button>
 
-                    <div className="bg-white p-2 rounded-[24px] border border-slate-100 flex items-center gap-4 shadow-sm self-start md:self-auto pr-6">
-                        <div className="w-12 h-12 bg-[#F7A25A]/10 rounded-2xl flex items-center justify-center text-[#F7A25A]">
-                            <LayoutGrid strokeWidth={2.5} size={24} />
+                    <div className="bg-white border border-[#2D384A]/10 rounded-2xl p-4 shadow-sm flex items-center gap-4 min-w-[240px]">
+                        <div className="w-12 h-12 bg-[#A8328D]/10 rounded-xl flex items-center justify-center">
+                            <Wallet className="w-6 h-6 text-[#A8328D]" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Token Balance</p>
-                            <p className="text-xl font-extrabold text-[#2D384A]">{user?.tokens?.toLocaleString() || 0} <span className="text-xs text-slate-300 font-bold">TOKENS</span></p>
+                            <p className="text-[10px] font-bold text-[#2D384A]/40 uppercase tracking-widest">Available Balance</p>
+                            <div className="flex items-baseline gap-1">
+                                <span className="text-2xl font-bold text-[#2D384A]">{user?.tokens?.toLocaleString()}</span>
+                                <span className="text-xs font-semibold text-[#A8328D]">TOKENS</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -480,150 +568,139 @@ const Dashboard = () => {
                     />
                 </Suspense>
             )}
-
-            {/* Unmerge Placement Modal */}
             {unmergingBucketId && (
-                <div className="fixed inset-0 z-[301] bg-[#2D384A]/40 backdrop-blur-xl flex items-center justify-center p-6">
+                <div className="fixed inset-0 z-[301] bg-[#2D384A]/60 backdrop-blur-md flex items-center justify-center p-6">
                     <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="bg-white p-10 rounded-[40px] shadow-2xl max-w-lg w-full border border-white"
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-[#EEEEEF] p-1 w-full max-w-lg rounded-[32px] shadow-2xl border border-white/20 overflow-hidden"
                     >
-                        <div className="flex items-center gap-4 mb-8 text-amber-600">
-                            <div className="p-3 bg-amber-50 rounded-2xl">
-                                <AlertTriangle className="w-7 h-7" />
+                        <div className="bg-white p-8 rounded-[28px]">
+                            <div className="flex items-center gap-4 mb-8">
+                                <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-600">
+                                    <AlertTriangle className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-bold text-[#2D384A] tracking-tight">Revert Merge</h2>
+                                    <p className="text-[10px] font-bold text-[#2D384A]/40 uppercase tracking-widest">System Restoration Protocol</p>
+                                </div>
                             </div>
-                            <div>
-                                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Revert Merge</h2>
-                                <p className="text-sm font-bold opacity-60">System restoration protocol</p>
-                            </div>
-                        </div>
 
-                        <p className="text-sm text-slate-500 font-medium leading-relaxed mb-10">
-                            You are about to unmerge this node. How should we handle data that was added <strong>after</strong> the merge was executed?
-                        </p>
+                            <p className="text-sm text-[#2D384A]/60 font-medium leading-relaxed mb-8">
+                                Executing unmerge. Please determine the routing for data ingested <span className="text-[#A8328D] font-bold">post-consolidation</span>.
+                            </p>
 
-                        <div className="space-y-4 mb-10">
-                            <UnmergeOption
-                                active={newDataAction === 'duplicate'}
-                                title="Duplicate to Both"
-                                desc="Copy all post-merge records into both parent buckets."
-                                onClick={() => setNewDataAction('duplicate')}
-                            />
-                            <UnmergeOption
-                                active={newDataAction === 'keep_in_a'}
-                                title={`Move to ${registries.find(r => r._id === registries.find(b => b._id === unmergingBucketId)?.parentLineage?.parents?.[0])?.name || 'Primary Parent'}`}
-                                desc="Move post-merge data back to the primary bucket only."
-                                onClick={() => setNewDataAction('keep_in_a')}
-                            />
-                            {registries.find(b => b._id === unmergingBucketId)?.parentLineage?.parents?.length! > 1 && (
+                            <div className="space-y-3 mb-10">
                                 <UnmergeOption
-                                    active={newDataAction === 'keep_in_b'}
-                                    title={`Move to ${registries.find(r => r._id === registries.find(b => b._id === unmergingBucketId)?.parentLineage?.parents?.[1])?.name || 'Secondary Parent'}`}
-                                    desc="Move post-merge data back to the secondary bucket only."
-                                    onClick={() => setNewDataAction('keep_in_b')}
+                                    active={newDataAction === 'duplicate'}
+                                    title="Mirror to Lineage"
+                                    desc="Replicate post-merge records into both original parent nodes."
+                                    onClick={() => setNewDataAction('duplicate')}
                                 />
-                            )}
-                            <UnmergeOption
-                                active={newDataAction === 'isolate'}
-                                title="Isolate in New Bucket"
-                                desc="Create a new bucket specifically for the post-merge records."
-                                onClick={() => setNewDataAction('isolate')}
-                            />
-                            <UnmergeOption
-                                active={newDataAction === 'discard'}
-                                title="Discard New Data"
-                                desc="Only restore original records; delete any data added during merge."
-                                onClick={() => setNewDataAction('discard')}
-                            />
-                        </div>
+                                <UnmergeOption
+                                    active={newDataAction === 'keep_in_a'}
+                                    title="Restore to Primary"
+                                    desc="Route all subsequent data back to the primary source node."
+                                    onClick={() => setNewDataAction('keep_in_a')}
+                                />
+                                <UnmergeOption
+                                    active={newDataAction === 'isolate'}
+                                    title="Isolate Delta"
+                                    desc="Move post-merge data into a fresh, independent registry."
+                                    onClick={() => setNewDataAction('isolate')}
+                                />
+                            </div>
 
-                        <div className="flex gap-4">
-                            <button
-                                onClick={() => setUnmergingBucketId(null)}
-                                className="flex-1 px-6 py-4 text-xs font-black text-slate-400 hover:text-slate-900 transition-all uppercase tracking-widest"
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                onClick={() => unmergeMutation.mutate({ id: unmergingBucketId, action: newDataAction })}
-                                className="flex-[2] px-8 py-5 bg-slate-900 text-white rounded-[24px] text-xs font-black uppercase tracking-widest hover:bg-black transition-all shadow-xl shadow-slate-900/10"
-                            >
-                                {unmergeMutation.isPending ? 'Processing...' : 'Execute Unmerge'}
-                            </button>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setUnmergingBucketId(null)}
+                                    className="flex-1 px-6 py-4 text-[10px] font-bold text-[#2D384A]/40 hover:text-[#2D384A] transition-all uppercase tracking-widest"
+                                >
+                                    Abort
+                                </button>
+                                <button
+                                    onClick={() => unmergeMutation.mutate({ id: unmergingBucketId, action: newDataAction })}
+                                    className="flex-[2] px-8 py-4 bg-[#2D384A] text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-[#A8328D] transition-all shadow-lg shadow-[#2D384A]/10"
+                                >
+                                    {unmergeMutation.isPending ? 'Processing...' : 'Confirm Restoration'}
+                                </button>
+                            </div>
                         </div>
                     </motion.div>
                 </div>
             )}
 
             {registries.length === 0 && !isLoading && (
-                <div className="mt-20 flex flex-col items-center justify-center p-20 text-center bg-white rounded-[40px] border border-slate-100 max-w-2xl mx-auto shadow-sm">
-                    <div className="w-24 h-24 bg-[#f0f4f9] rounded-[32px] flex items-center justify-center mb-8 rotate-3 shadow-inner">
-                        <Database className="w-10 h-10 text-slate-300" />
+                <div className="mt-20 flex flex-col items-center justify-center p-16 text-center bg-white/50 backdrop-blur-sm rounded-[40px] border border-[#2D384A]/5 max-w-2xl mx-auto shadow-sm">
+                    <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center mb-8 rotate-3 shadow-xl shadow-[#2D384A]/5">
+                        <Database className="w-8 h-8 text-[#2D384A]/20" />
                     </div>
-                    <h2 className="text-2xl font-bold text-[#2D384A] tracking-tight mb-3">No Bucket Active</h2>
-                    <p className="text-slate-400 text-sm max-w-sm mb-10 leading-relaxed font-medium">There are currently no active data registries online. Initialize your first node to begin system ingestion.</p>
+                    <h2 className="text-2xl font-bold text-[#2D384A] tracking-tight mb-2">Registry Offline</h2>
+                    <p className="text-[#2D384A]/40 text-sm max-w-xs mb-10 leading-relaxed font-medium">
+                        No active data nodes detected. Initialize a bucket to begin system ingestion.
+                    </p>
                     <button
                         onClick={() => setShowModal(true)}
-                        className="px-10 py-5 bg-[#2D384A] text-white rounded-[24px] font-bold text-xs uppercase tracking-widest shadow-xl shadow-[#2D384A]/20 hover:bg-black transition-all hover:-translate-y-1 active:translate-y-0"
+                        className="px-10 py-4 bg-[#A8328D] text-white rounded-xl font-bold text-[10px] uppercase tracking-[0.2em] shadow-xl shadow-[#A8328D]/20 hover:bg-[#2D384A] transition-all hover:-translate-y-1"
                     >
-                        Initialize Extraction
+                        Initialize Node
                     </button>
                 </div>
             )}
 
-            {/* Create Registry Modal */}
             {showModal && (
-                <div className="fixed inset-0 bg-[#2D384A]/20 backdrop-blur-md flex items-center justify-center z-[100] p-6 animate-in fade-in duration-300">
-                    <div className="bg-white p-10 rounded-[40px] shadow-2xl max-w-xl w-full border border-white animate-in zoom-in-95 duration-300">
-                        <div className="flex justify-between items-start mb-10">
-                            <div>
-                                <h2 className="text-2xl font-bold text-[#2D384A] tracking-tight">Deploy Bucket</h2>
-                                <p className="text-slate-400 text-sm mt-1 font-medium">Configure core parameters for a new system registry.</p>
+                <div className="fixed inset-0 bg-[#2D384A]/60 backdrop-blur-md flex items-center justify-center z-[100] p-6">
+                    <div className="bg-[#EEEEEF] p-1 rounded-[32px] shadow-2xl max-w-xl w-full border border-white/20 animate-in zoom-in-95 duration-200">
+                        <div className="bg-white p-10 rounded-[28px]">
+                            <div className="flex justify-between items-start mb-10">
+                                <div>
+                                    <h2 className="text-xl font-bold text-[#2D384A] tracking-tight">Deploy Node</h2>
+                                    <p className="text-[#2D384A]/40 text-[11px] mt-1 font-bold uppercase tracking-widest">New System Registry</p>
+                                </div>
+                                <button
+                                    onClick={() => setShowModal(false)}
+                                    className="p-2 text-[#2D384A]/20 hover:text-[#2D384A] hover:bg-[#EEEEEF] rounded-lg transition-all"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
-                            <button
-                                onClick={() => setShowModal(false)}
-                                className="p-3 text-slate-300 hover:text-[#2D384A] hover:bg-slate-50 rounded-2xl transition-all"
-                            >
-                                <X className="w-6 h-6" />
-                            </button>
-                        </div>
 
-                        <div className="space-y-8 mb-12">
-                            <div className="space-y-3">
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1">Registry Label</label>
-                                <input
-                                    className="w-full px-6 py-4 bg-[#f0f4f9] border border-transparent rounded-[24px] text-sm font-bold text-[#2D384A] outline-none focus:bg-white focus:border-[#2D384A] focus:ring-4 focus:ring-[#2D384A]/5 transition-all placeholder:text-slate-300"
-                                    placeholder="e.g. Arizona_North_Core_V4"
-                                    value={newRegistry.name}
-                                    onChange={e => setNewRegistry({ ...newRegistry, name: e.target.value })}
-                                />
+                            <div className="space-y-6 mb-10">
+                                <div className="space-y-2">
+                                    <label className="block text-[9px] font-bold text-[#2D384A]/40 uppercase tracking-widest ml-1">Registry Label</label>
+                                    <input
+                                        className="w-full px-5 py-4 bg-[#EEEEEF]/50 border border-transparent rounded-xl text-sm font-bold text-[#2D384A] outline-none focus:bg-white focus:ring-2 focus:ring-[#A8328D]/20 transition-all placeholder:text-[#2D384A]/20"
+                                        placeholder="NODE_BETA_PRIME"
+                                        value={newRegistry.name}
+                                        onChange={e => setNewRegistry({ ...newRegistry, name: e.target.value })}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <label className="block text-[9px] font-bold text-[#2D384A]/40 uppercase tracking-widest ml-1">System Metadata</label>
+                                    <textarea
+                                        className="w-full px-5 py-4 bg-[#EEEEEF]/50 border border-transparent rounded-xl text-sm font-bold text-[#2D384A] outline-none focus:bg-white focus:ring-2 focus:ring-[#A8328D]/20 transition-all h-32 resize-none placeholder:text-[#2D384A]/20"
+                                        placeholder="Operational boundaries..."
+                                        value={newRegistry.description}
+                                        onChange={e => setNewRegistry({ ...newRegistry, description: e.target.value })}
+                                    />
+                                </div>
                             </div>
-                            <div className="space-y-3">
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] ml-1">System Metadata</label>
-                                <textarea
-                                    className="w-full px-6 py-4 bg-[#f0f4f9] border border-transparent rounded-[24px] text-sm font-bold text-[#2D384A] outline-none focus:bg-white focus:border-[#2D384A] focus:ring-4 focus:ring-[#2D384A]/5 transition-all h-36 resize-none placeholder:text-slate-300"
-                                    placeholder="Define operational boundaries and intended data types..."
-                                    value={newRegistry.description}
-                                    onChange={e => setNewRegistry({ ...newRegistry, description: e.target.value })}
-                                />
-                            </div>
-                        </div>
 
-                        <div className="flex gap-4">
-                            <button
-                                onClick={() => setShowModal(false)}
-                                className="flex-1 px-6 py-4 text-xs font-bold text-slate-400 hover:text-[#2D384A] transition-all uppercase tracking-widest"
-                            >
-                                Discard
-                            </button>
-                            <button
-                                onClick={() => createRegistryMutation.mutate(newRegistry)}
-                                disabled={!newRegistry.name || createRegistryMutation.isPending}
-                                className="flex-[2] px-6 py-5 bg-[#2D384A] text-white rounded-[24px] text-xs font-bold uppercase tracking-widest transition-all hover:bg-black disabled:opacity-50 shadow-xl shadow-[#2D384A]/20"
-                            >
-                                {createRegistryMutation.isPending ? 'Processing...' : 'Deploy Registry'}
-                            </button>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowModal(false)}
+                                    className="flex-1 px-6 py-4 text-[10px] font-bold text-[#2D384A]/40 hover:text-[#2D384A] transition-all uppercase tracking-widest"
+                                >
+                                    Discard
+                                </button>
+                                <button
+                                    onClick={() => createRegistryMutation.mutate(newRegistry)}
+                                    disabled={!newRegistry.name || createRegistryMutation.isPending}
+                                    className="flex-[2] px-6 py-4 bg-[#2D384A] text-white rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all hover:bg-[#A8328D] disabled:opacity-30 shadow-lg shadow-[#2D384A]/10"
+                                >
+                                    {createRegistryMutation.isPending ? 'Deploying...' : 'Execute Deployment'}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

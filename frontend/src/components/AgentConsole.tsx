@@ -17,6 +17,8 @@ import clsx from 'clsx';
 import { useQueryClient, useInfiniteQuery, useMutation, useQuery } from '@tanstack/react-query';
 import api from '../services/api';
 
+import * as XLSX from 'xlsx';
+
 // Lazy Components
 const ReviewExtractionModal = lazy(() => import('./ReviewExtractionModal'));
 const QueryResultModal = lazy(() => import('./QueryResultModal'));
@@ -370,6 +372,76 @@ const AgentConsole = ({ bucketId, initialFile }: AgentConsoleProps) => {
             } finally {
                 setIsProcessing(false);
             }
+        }
+    };
+
+    const handleQueryExport = async (format: 'xlsx' | 'csv', columns: string[]) => {
+        if (!queryModalData.prompt || !bucketId) return;
+
+        try {
+            toastHelper.success("Starting export...");
+            // 1. Fetch ALL data (up to reasonable limit)
+            const res = await api.post('/agent/query', {
+                bucketId,
+                prompt: queryModalData.prompt,
+                page: 1,
+                limit: 10000 // High limit for export
+            });
+
+            const rows = res.data.data;
+            if (!rows || rows.length === 0) {
+                toastHelper.error("No data to export");
+                return;
+            }
+
+            // 2. Map data to flat structure based on columns
+            const exportData = rows.map((r: any) => {
+                const flatRow: any = {};
+                columns.forEach(col => {
+                    flatRow[col] = r.data?.[col] || '';
+                });
+                return flatRow;
+            });
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const fileName = `query_results_${timestamp}`;
+
+            if (format === 'csv') {
+                // CSV Strategy: Manual string building for speed
+                const headers = columns.join(',');
+                const csvRows = exportData.map((row: any) =>
+                    columns.map(col => {
+                        const cell = row[col] === null || row[col] === undefined ? '' : String(row[col]);
+                        // Escape quotes and wrap in quotes if contains comma
+                        if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+                            return `"${cell.replace(/"/g, '""')}"`;
+                        }
+                        return cell;
+                    }).join(',')
+                );
+                const csvContent = [headers, ...csvRows].join('\n');
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `${fileName}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else {
+                // Excel Strategy: using xlsx
+                const worksheet = XLSX.utils.json_to_sheet(exportData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Query Results");
+                XLSX.writeFile(workbook, `${fileName}.xlsx`);
+            }
+
+            toastHelper.success(`Exported ${rows.length} records`);
+
+        } catch (err) {
+            console.error("Export Error", err);
+            toastHelper.error("Failed to export data");
         }
     };
 
@@ -865,15 +937,20 @@ const AgentConsole = ({ bucketId, initialFile }: AgentConsoleProps) => {
                         />
                     </div>
                 )}
+            </Suspense>
 
-                <QueryResultModal
-                    isOpen={queryModalOpen}
-                    onClose={() => setQueryModalOpen(false)}
-                    queryPrompt={queryModalData.prompt}
-                    records={queryModalData.records}
-                    pagination={queryModalData.pagination}
-                    onPageChange={handleQueryPageChange}
-                />
+            <Suspense fallback={null}>
+                {queryModalOpen && (
+                    <QueryResultModal
+                        isOpen={queryModalOpen}
+                        onClose={() => setQueryModalOpen(false)}
+                        queryPrompt={queryModalData.prompt}
+                        records={queryModalData.records}
+                        pagination={queryModalData.pagination}
+                        onPageChange={handleQueryPageChange}
+                        onExport={handleQueryExport}
+                    />
+                )}
             </Suspense>
         </div>
     );

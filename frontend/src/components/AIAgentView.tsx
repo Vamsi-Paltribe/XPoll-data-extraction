@@ -8,6 +8,7 @@ import { AxiosError } from 'axios';
 import { toast } from 'sonner';
 import ReviewExtractionModal from './ReviewExtractionModal';
 import QueryResultModal from './QueryResultModal';
+import * as XLSX from 'xlsx';
 
 interface AIAgentViewProps {
     bucketId?: string;
@@ -297,6 +298,75 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                     }];
                 });
             }
+        }
+    };
+
+    const handleQueryExport = async (format: 'xlsx' | 'csv', columns: string[]) => {
+        if (!queryModalData.prompt || !bucketId) return;
+
+        try {
+            toast.success("Starting export...");
+            // 1. Fetch ALL data (up to reasonable limit)
+            const res = await api.post('/agent/query', {
+                bucketId,
+                prompt: queryModalData.prompt,
+                page: 1,
+                limit: 10000 // High limit for export
+            });
+
+            const rows = res.data.data;
+            if (!rows || rows.length === 0) {
+                toast.error("No data to export");
+                return;
+            }
+
+            // 2. Map data to flat structure based on columns
+            const exportData = rows.map((r: any) => {
+                const flatRow: any = {};
+                columns.forEach(col => {
+                    flatRow[col] = r.data?.[col] || '';
+                });
+                return flatRow;
+            });
+
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const fileName = `query_results_${timestamp}`;
+
+            if (format === 'csv') {
+                // CSV Strategy: Manual string building for speed
+                const headers = columns.join(',');
+                const csvRows = exportData.map((row: any) =>
+                    columns.map(col => {
+                        const cell = row[col] === null || row[col] === undefined ? '' : String(row[col]);
+                        if (cell.includes(',') || cell.includes('"') || cell.includes('\n')) {
+                            return `"${cell.replace(/"/g, '""')}"`;
+                        }
+                        return cell;
+                    }).join(',')
+                );
+                const csvContent = [headers, ...csvRows].join('\n');
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                const url = URL.createObjectURL(blob);
+                link.setAttribute("href", url);
+                link.setAttribute("download", `${fileName}.csv`);
+                link.style.visibility = 'hidden';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            } else {
+                // Excel Strategy
+                const worksheet = XLSX.utils.json_to_sheet(exportData);
+                const workbook = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(workbook, worksheet, "Query Results");
+                XLSX.writeFile(workbook, `${fileName}.xlsx`);
+            }
+
+            toast.success(`Exported ${rows.length} records`);
+
+        } catch (err) {
+            console.error("Export Error", err);
+            toast.error("Failed to export data");
         }
     };
 
@@ -671,6 +741,7 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                 records={queryModalData.records}
                 pagination={queryModalData.pagination}
                 onPageChange={handleQueryPageChange}
+                onExport={handleQueryExport}
             />
         </div >
     );
