@@ -10,9 +10,8 @@ import {
     Settings2,
     ChevronLeft
 } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
 import clsx from 'clsx';
+import { useMergeAnalysis, useExecuteMerge } from '../hooks';
 
 interface ConsolidationWizardProps {
     sourceBucket: any;
@@ -24,24 +23,14 @@ interface ConsolidationWizardProps {
 const ConsolidationWizard = ({ sourceBucket, targetBucket, onClose, onComplete }: ConsolidationWizardProps) => {
     const [step, setStep] = useState(1);
     const [mergeName, setMergeName] = useState(`Combined: ${sourceBucket.name} & ${targetBucket.name}`);
-    const queryClient = useQueryClient();
 
-    const { data: analysis, isLoading: analyzing } = useQuery({
-        queryKey: ['merge-analysis', sourceBucket._id, targetBucket._id],
-        queryFn: async () => {
-            const res = await api.post('/merge/analyze', { sourceId: sourceBucket._id, targetId: targetBucket._id });
-            return res.data;
-        },
-        enabled: step >= 2
-    });
+    const { data: analysis, isLoading: analyzing } = useMergeAnalysis(
+        sourceBucket._id,
+        targetBucket._id,
+        step >= 2
+    );
 
-    const mergeMutation = useMutation({
-        mutationFn: (data: any) => api.post('/merge/execute', data),
-        onSuccess: (res) => {
-            queryClient.invalidateQueries({ queryKey: ['registries'] });
-            onComplete(res.data.bucketId);
-        }
-    });
+    const mergeMutation = useExecuteMerge(onComplete);
 
     const handleExecuteMerge = () => {
         mergeMutation.mutate({
@@ -232,37 +221,9 @@ const ConsolidationWizard = ({ sourceBucket, targetBucket, onClose, onComplete }
     );
 };
 
-const StatsCard = ({ label, value, icon, type = 'default' }: any) => (
-    <div className="p-5 rounded-2xl border border-[#2D384A]/5 bg-white flex items-center gap-4 shadow-sm">
-        <div className={clsx(
-            "w-10 h-10 rounded-xl flex items-center justify-center",
-            type === 'warning' ? 'bg-amber-50' : 'bg-[#EEEEEF]'
-        )}>
-            {icon || <Database className="w-5 h-5 text-[#2D384A]/40" />}
-        </div>
-        <div>
-            <p className="text-[9px] font-bold text-[#2D384A]/40 uppercase tracking-widest">{label}</p>
-            <p className="text-lg font-bold text-[#2D384A] tracking-tight">{value?.toLocaleString() || 0}</p>
-        </div>
-    </div>
-);
-
-const ResolutionOption = ({ title, desc, active = false }: any) => (
-    <div className={clsx(
-        "p-4 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-4",
-        active ? 'bg-white border-[#A8328D] shadow-md' : 'bg-transparent border-[#2D384A]/5 hover:border-[#2D384A]/20'
-    )}>
-        <div className={clsx(
-            "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
-            active ? 'border-[#A8328D] bg-[#A8328D]' : 'border-[#2D384A]/20'
-        )}>
-            {active && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-        </div>
-        <div>
-            <p className="text-xs font-bold text-[#2D384A]">{title}</p>
-            <p className="text-[10px] text-[#2D384A]/50 font-medium">{desc}</p>
-        </div>
-    </div>
-);
+import {
+    StatsCard,
+    ResolutionOption
+} from './dashboard/merge';
 
 export default ConsolidationWizard;

@@ -1,14 +1,12 @@
-
 import { useState, useRef, useEffect, ChangeEvent, KeyboardEvent } from 'react';
 import { Paperclip, XCircle, FileText, Loader2, Sparkles, Bot, ArrowUp, CheckCircle, XOctagon, Clock, Layers, Database, Hash, Search } from 'lucide-react';
-import api from '../services/api';
 import clsx from 'clsx';
-import { useQueryClient, useInfiniteQuery, useMutation } from '@tanstack/react-query';
-import { AxiosError } from 'axios';
 import { toast } from 'sonner';
 import ReviewExtractionModal from './ReviewExtractionModal';
 import QueryResultModal from './QueryResultModal';
 import * as XLSX from 'xlsx';
+import { useJobs, useAgent } from '../hooks';
+import { Job } from '../types';
 
 interface AIAgentViewProps {
     bucketId?: string;
@@ -30,21 +28,10 @@ interface Message {
     };
 }
 
-interface Job {
-    _id: string;
-    originalName: string;
-    status: 'queued' | 'processing' | 'completed' | 'failed' | 'waiting_approval' | 'rejected' | 'paused';
-    result?: any;
-    createdAt: string;
-    tokensConsumed?: number;
-    error?: string;
-}
-
 const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) => {
     const [messages, setMessages] = useState<Message[]>([]); // Start empty for clean landing page feel
     const [inputValue, setInputValue] = useState('');
     const [stagedFile, setStagedFile] = useState<File | null>(null);
-    const [uploading, setUploading] = useState(false);
     const [dragActive, setDragActive] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -58,7 +45,8 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
         prompt: ''
     });
 
-    const queryClient = useQueryClient();
+    const { jobs, approveJob, rejectJob } = useJobs(bucketId);
+    const { uploadFile, queryData } = useAgent(bucketId);
 
     useEffect(() => {
         if (initialFile) {
@@ -86,75 +74,13 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
         }
     };
 
-    // Auto-resize textarea1
+    // Auto-resize textarea
     useEffect(() => {
         if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
             textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
         }
     }, [inputValue]);
-
-    // --- Job Queue Logic ---
-    // --- Job Queue Logic ---
-    const {
-        data: jobsData
-    } = useInfiniteQuery({
-        queryKey: ['jobs-infinite', bucketId],
-        queryFn: async ({ pageParam = 1 }) => {
-            if (!bucketId) return { jobs: [], pagination: { total: 0, page: 1, limit: 20, pages: 0 } };
-            const res = await api.get<{ jobs: Job[], pagination: any } | Job[]>(`/jobs/bucket/${bucketId}?page=${pageParam}&limit=20`);
-
-            // Handle legacy array response
-            if (Array.isArray(res.data)) {
-                return {
-                    jobs: res.data,
-                    pagination: { total: res.data.length, page: 1, limit: 1000, pages: 1 }
-                };
-            }
-            return res.data;
-        },
-        getNextPageParam: (lastPage) => {
-            if (!lastPage || !lastPage.pagination) return undefined;
-            const { page, pages } = lastPage.pagination;
-            return page < pages ? page + 1 : undefined;
-        },
-        enabled: !!bucketId,
-        refetchInterval: 5000,
-        initialPageParam: 1
-    });
-
-    const jobs = jobsData?.pages.flatMap(page => page.jobs) || [];
-
-
-
-
-    const approveMutation = useMutation({
-        mutationFn: async ({ jobId, manualState }: { jobId: string, manualState?: string }) => {
-            await api.post(`/jobs/${jobId}/approve`, { manualState });
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', bucketId] });
-            queryClient.invalidateQueries({ queryKey: ['registry-customers', bucketId] });
-            queryClient.invalidateQueries({ queryKey: ['user-me'] }); // Refresh tokens
-            queryClient.invalidateQueries({ queryKey: ['jobs'] });
-            toast.success('Job approved and data committed successfully');
-            setSelectedReviewJob(null);
-        },
-        onError: (err: any) => {
-            toast.error(err.response?.data?.error || 'Failed to approve job');
-        }
-    });
-
-    const rejectMutation = useMutation({
-        mutationFn: async (jobId: string) => {
-            await api.post(`/jobs/${jobId}/reject`);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', bucketId] });
-            setSelectedReviewJob(null);
-        }
-    });
-    // -----------------------
 
     const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
         if (e.target.files?.[0]) {
@@ -188,7 +114,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
 
         if (currentFile && bucketId) {
-            setUploading(true);
             const cost = calculateCost(currentFile);
 
             // Pre-flight Logic
@@ -198,7 +123,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                     isError: true,
                     content: `⚠️ **Insufficient Tokens**\n\nThis file requires approximately **${cost} tokens**, but you only have **${userTokens} tokens**.\n\nPlease recharge your wallet to continue.`
                 }]);
-                setUploading(false);
                 return;
             }
 
@@ -209,43 +133,27 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                 content: `Analyzing ${currentFile.name} (Est. Cost: ${cost} tokens)...`
             }]);
 
-            try {
-                const formData = new FormData();
-                formData.append('file', currentFile);
-                formData.append('bucketId', bucketId);
-                formData.append('prompt', currentPrompt);
-
-                const res = await api.post('/agent/upload', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
-
-                // Remove loading message and add success
-                setMessages(prev => {
-                    const filtered = prev.filter(m => !m.isLoading);
-                    return [...filtered, {
-                        type: 'system',
-                        content: `✅ **Ingestion Started**\n\nFile: ` + '`' + currentFile.name + '`' + `\nJob ID: ` + '`' + res.data.jobId.slice(-6) + '`' + `\n\nI have queued this file for deep extraction using the specified parameters.`
-                    }];
-                });
-
-                queryClient.invalidateQueries({ queryKey: ['user-me'] }); // Refresh global token balance
-
-            } catch (err) {
-                console.error("Agent Upload Error", err);
-                const error = err as AxiosError<any>;
-                const errorMessage = error.response?.data?.error || "Failed to process file.";
-
-                setMessages(prev => {
-                    const filtered = prev.filter(m => !m.isLoading);
-                    return [...filtered, {
-                        type: 'system',
-                        isError: true,
-                        content: `❌ Error: ${errorMessage}`
-                    }];
-                });
-            } finally {
-                setUploading(false);
-            }
+            uploadFile.mutate({ file: currentFile, prompt: currentPrompt }, {
+                onSuccess: (res) => {
+                    setMessages(prev => {
+                        const filtered = prev.filter(m => !m.isLoading);
+                        return [...filtered, {
+                            type: 'system',
+                            content: `✅ **Ingestion Started**\n\nFile: ` + '`' + currentFile.name + '`' + `\nJob ID: ` + '`' + res.jobId.slice(-6) + '`' + `\n\nI have queued this file for deep extraction using the specified parameters.`
+                        }];
+                    });
+                },
+                onError: (err: any) => {
+                    setMessages(prev => {
+                        const filtered = prev.filter(m => !m.isLoading);
+                        return [...filtered, {
+                            type: 'system',
+                            isError: true,
+                            content: `❌ Error: ${err.response?.data?.error || "Failed to process file."}`
+                        }];
+                    });
+                }
+            });
         } else {
             // --- Chat-to-Query Logic ---
             const userPrompt = currentPrompt;
@@ -255,49 +163,44 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                 content: `Searching database for "${userPrompt}"...`
             }]);
 
-            try {
-                const res = await api.post('/agent/query', {
-                    bucketId,
-                    prompt: userPrompt,
-                    page: 1,
-                    limit: 20
-                });
+            queryData.mutate({ prompt: userPrompt, page: 1, limit: 20 }, {
+                onSuccess: (res) => {
+                    setMessages(prev => {
+                        const filtered = prev.filter(m => !m.isLoading);
+                        const { data, summary, pagination } = res;
 
-                setMessages(prev => {
-                    const filtered = prev.filter(m => !m.isLoading);
-                    const { data, summary, pagination } = res.data;
-
-                    let content = '';
-                    if (summary) {
-                        content = `Found **${summary.value}** matching records.`;
-                    } else if (data.length > 0) {
-                        content = `Found **${pagination.total}** records matching your request.`;
-                    } else {
-                        content = `I couldn't find any records matching "${userPrompt}".`;
-                    }
-
-                    return [...filtered, {
-                        type: 'system',
-                        content,
-                        queryResult: {
-                            summary,
-                            data,
-                            pagination,
-                            prompt: userPrompt
+                        let content = '';
+                        if (summary) {
+                            content = `Found **${summary.value}** matching records.`;
+                        } else if (data.length > 0) {
+                            content = `Found **${pagination.total}** records matching your request.`;
+                        } else {
+                            content = `I couldn't find any records matching "${userPrompt}".`;
                         }
-                    }];
-                });
 
-            } catch (err: any) {
-                setMessages(prev => {
-                    const filtered = prev.filter(m => !m.isLoading);
-                    return [...filtered, {
-                        type: 'system',
-                        isError: true,
-                        content: `❌ Query Failed: ${err.response?.data?.error || err.message}`
-                    }];
-                });
-            }
+                        return [...filtered, {
+                            type: 'system',
+                            content,
+                            queryResult: {
+                                summary,
+                                data,
+                                pagination,
+                                prompt: userPrompt
+                            }
+                        }];
+                    });
+                },
+                onError: (err: any) => {
+                    setMessages(prev => {
+                        const filtered = prev.filter(m => !m.isLoading);
+                        return [...filtered, {
+                            type: 'system',
+                            isError: true,
+                            content: `❌ Query Failed: ${err.response?.data?.error || err.message}`
+                        }];
+                    });
+                }
+            });
         }
     };
 
@@ -307,14 +210,13 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
         try {
             toast.success("Starting export...");
             // 1. Fetch ALL data (up to reasonable limit)
-            const res = await api.post('/agent/query', {
-                bucketId,
+            const res = await queryData.mutateAsync({
                 prompt: queryModalData.prompt,
                 page: 1,
                 limit: 10000 // High limit for export
             });
 
-            const rows = res.data.data;
+            const rows = res.data;
             if (!rows || rows.length === 0) {
                 toast.error("No data to export");
                 return;
@@ -333,7 +235,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
             const fileName = `query_results_${timestamp}`;
 
             if (format === 'csv') {
-                // CSV Strategy: Manual string building for speed
                 const headers = columns.join(',');
                 const csvRows = exportData.map((row: any) =>
                     columns.map(col => {
@@ -355,7 +256,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                 link.click();
                 document.body.removeChild(link);
             } else {
-                // Excel Strategy
                 const worksheet = XLSX.utils.json_to_sheet(exportData);
                 const workbook = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(workbook, worksheet, "Query Results");
@@ -373,16 +273,15 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
     const handleQueryPageChange = async (newPage: number) => {
         if (!queryModalData.prompt) return;
         try {
-            const res = await api.post('/agent/query', {
-                bucketId,
+            const res = await queryData.mutateAsync({
                 prompt: queryModalData.prompt,
                 page: newPage,
                 limit: 20
             });
             setQueryModalData(prev => ({
                 ...prev,
-                records: res.data.data,
-                pagination: res.data.pagination
+                records: res.data,
+                pagination: res.pagination
             }));
         } catch (err) {
             toast.error("Failed to load page");
@@ -400,7 +299,7 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                 onDrop={handleDrop}
                 className="flex-1 flex flex-col relative h-full bg-white/50 rounded-3xl border border-white/60 shadow-sm backdrop-blur-xl overflow-hidden"
             >
-                {/* Ambient Background (Optional) */}
+                {/* Ambient Background */}
                 <div className="absolute inset-0 bg-gradient-to-tr from-purple-50/50 to-white -z-10" />
 
                 {/* Drag Overlay */}
@@ -416,7 +315,7 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                     </div>
                 )}
 
-                {/* Chat Area - Centered & Clean */}
+                {/* Chat Area */}
                 <div className="flex-1 overflow-y-auto w-full">
                     <div className="flex flex-col justify-start pt-10 pb-48 px-8 md:px-20 max-w-4xl mx-auto">
 
@@ -434,7 +333,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
 
                         {messages.map((msg, idx) => (
                             <div key={idx} className={clsx("flex gap-6 mb-8 w-full animate-in fade-in slide-in-from-bottom-4 duration-500 group", msg.type === 'user' ? "flex-row-reverse" : "flex-row")}>
-                                {/* Avatar */}
                                 <div className={clsx(
                                     "w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-1",
                                     msg.type === 'user' ? "bg-slate-900" : "bg-white border border-slate-200"
@@ -446,7 +344,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                                     )}
                                 </div>
 
-                                {/* Content Bubble */}
                                 <div className={clsx(
                                     "max-w-[80%] text-[15px] leading-7 font-medium",
                                     msg.type === 'system' ? "text-slate-600" : "text-slate-800"
@@ -475,7 +372,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                                         <>
                                             {msg.queryResult && (
                                                 <div className="mt-3">
-                                                    {/* Adaptive UI: Scenario A - Stat Card */}
                                                     {msg.queryResult.summary && (
                                                         <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-5 mb-3 flex items-center gap-4 w-fit">
                                                             <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-sm text-indigo-600">
@@ -488,7 +384,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                                                         </div>
                                                     )}
 
-                                                    {/* Adaptive UI: Scenario B - Mini List (Small sets) */}
                                                     {!msg.queryResult.summary && msg.queryResult.data && msg.queryResult.data.length > 0 && msg.queryResult.data.length <= 5 && (
                                                         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm mb-3 max-w-md">
                                                             {msg.queryResult.data.map((rec: any, i: number) => (
@@ -505,7 +400,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                                                         </div>
                                                     )}
 
-                                                    {/* Adaptive UI: Scenario C - Summary + Action (Large sets) */}
                                                     {!msg.queryResult.summary && msg.queryResult.pagination && msg.queryResult.pagination.total > 5 && (
                                                         <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm mb-3 max-w-sm">
                                                             <div className="flex items-center gap-3 mb-3">
@@ -546,13 +440,12 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                     </div>
                 </div>
 
-                {/* Input Area - Floating & Large */}
+                {/* Input Area */}
                 <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-white via-white to-transparent pt-20">
                     <div className="max-w-3xl mx-auto w-full relative group">
                         <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 via-purple-200 to-pink-500 rounded-[2rem] opacity-20 group-focus-within:opacity-40 transition duration-500 blur"></div>
                         <div className="relative bg-white rounded-[1.75rem] shadow-xl shadow-slate-200/50 border border-slate-100 flex flex-col overflow-hidden transition-all duration-300">
 
-                            {/* Staged File Pill */}
                             {stagedFile && (
                                 <div className="px-4 pt-4 animate-in slide-in-from-bottom-2">
                                     <div className="inline-flex items-center gap-3 px-3 py-2 bg-slate-50 rounded-xl border border-slate-200/60">
@@ -591,15 +484,15 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
 
                                 <button
                                     onClick={handleSendMessage}
-                                    disabled={(!inputValue && !stagedFile) || uploading}
+                                    disabled={(!inputValue && !stagedFile) || uploadFile.isPending}
                                     className={clsx(
                                         "p-3 rounded-full transition-all mb-1",
-                                        (!inputValue && !stagedFile) || uploading
+                                        (!inputValue && !stagedFile) || uploadFile.isPending
                                             ? "bg-slate-100 text-slate-300"
                                             : "bg-slate-900 text-white hover:bg-black hover:scale-110 shadow-lg shadow-slate-900/20"
                                     )}
                                 >
-                                    {uploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowUp className="w-5 h-5" />}
+                                    {uploadFile.isPending ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowUp className="w-5 h-5" />}
                                 </button>
                             </div>
                         </div>
@@ -617,7 +510,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                         <Clock className="w-4 h-4 text-slate-400" />
                         Job History
                     </h3>
-                    {/* Simple loading indicator if needed, though infinite query handles it differently */}
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -646,10 +538,8 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                                     {new Date(job.createdAt).toLocaleString()}
                                 </p>
 
-                                {/* Actions for Waiting Approval */}
                                 {job.status === 'waiting_approval' && (
                                     <div className="mt-3 space-y-3 pt-3 border-t border-slate-50">
-                                        {/* Semantic Mapping Review */}
                                         {job.result?.detectedMapping && Object.keys(job.result.detectedMapping).length > 0 && (
                                             <div className="bg-slate-50/50 rounded-xl p-3 border border-slate-100">
                                                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 flex items-center gap-1">
@@ -679,16 +569,16 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
 
                                             <div className="flex gap-2">
                                                 <button
-                                                    onClick={() => approveMutation.mutate({ jobId: job._id })}
-                                                    disabled={approveMutation.isPending}
+                                                    onClick={() => approveJob.mutate({ jobId: job._id })}
+                                                    disabled={approveJob.isPending}
                                                     className="flex-1 py-2 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1"
                                                 >
-                                                    {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
+                                                    {approveJob.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle className="w-3 h-3" />}
                                                     Approve
                                                 </button>
                                                 <button
-                                                    onClick={() => rejectMutation.mutate(job._id)}
-                                                    disabled={rejectMutation.isPending}
+                                                    onClick={() => rejectJob.mutate(job._id)}
+                                                    disabled={rejectJob.isPending}
                                                     className="flex-1 py-2 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-xl transition-colors flex items-center justify-center gap-1"
                                                 >
                                                     <XOctagon className="w-3 h-3" />
@@ -699,7 +589,6 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                                     </div>
                                 )}
 
-                                {/* Error / Paused Message */}
                                 {(job.status === 'failed' || job.status === 'paused') && (
                                     <div className={clsx(
                                         "mt-3 p-3 rounded-xl border text-[11px]",
@@ -726,10 +615,18 @@ const AIAgentView = ({ bucketId, userTokens, initialFile }: AIAgentViewProps) =>
                         job={selectedReviewJob}
                         onClose={() => setSelectedReviewJob(null)}
                         onApprove={(jobId: string, options?: { manualState?: string }) => {
-                            approveMutation.mutate({ jobId, ...options });
+                            approveJob.mutate({ jobId, ...options }, {
+                                onSuccess: () => {
+                                    setSelectedReviewJob(null);
+                                }
+                            });
                         }}
-                        onReject={(id: string) => rejectMutation.mutate(id)}
-                        isProcessing={approveMutation.isPending || rejectMutation.isPending}
+                        onReject={(id: string) => rejectJob.mutate(id, {
+                            onSuccess: () => {
+                                setSelectedReviewJob(null);
+                            }
+                        })}
+                        isProcessing={approveJob.isPending || rejectJob.isPending}
                     />
                 )
             }

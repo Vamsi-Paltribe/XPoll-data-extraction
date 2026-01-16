@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import {
     LayoutTemplate,
-    Database, ChevronLeft, ChevronRight,
+    ChevronLeft, ChevronRight,
     Loader2, Check, X
 } from 'lucide-react';
-import api from '../services/api';
-import { useQuery } from '@tanstack/react-query';
 import StateSelector from './StateSelector';
+import { useJobRecords } from '../hooks';
+import {
+    MappingSummary,
+    ExtractionTable
+} from './review';
 
 interface ReviewExtractionModalProps {
     job: any;
@@ -27,13 +30,7 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
     const [manualState, setManualState] = useState('');
     const limit = 15;
 
-    const { data, isLoading } = useQuery({
-        queryKey: ['job-records', job._id, page],
-        queryFn: async () => {
-            const res = await api.get(`/jobs/${job._id}/records?page=${page}&limit=${limit}`);
-            return res.data;
-        }
-    });
+    const { data, isLoading } = useJobRecords(job._id, page, limit);
 
     const records = data?.records || [];
     const pagination = data?.pagination || { total: 0, pages: 1 };
@@ -102,60 +99,12 @@ const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
                 <div className="flex-1 flex flex-col min-h-0 bg-white">
                     {/* Schema Mapping Summary Overlay (Mini) */}
                     {job.mimeType !== 'application/x-sync' && job.result?.detectedMapping && Object.keys(job.result.detectedMapping).length > 0 && (
-                        <div className="px-8 py-3 bg-slate-50 border-b border-slate-100 flex items-center gap-6 overflow-x-auto no-scrollbar shrink-0">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest whitespace-nowrap px-2">Active Mapping:</span>
-                            {Object.entries(job.result.detectedMapping).map(([source, target]: [string, any]) => (
-                                <div key={source} className="flex items-center gap-2 px-3 py-1 bg-white rounded-lg border border-slate-200 shadow-sm whitespace-nowrap">
-                                    <span className="text-[10px] text-slate-400 italic font-medium">{source}</span>
-                                    <div className="w-2 h-[1px] bg-slate-200" />
-                                    <span className="text-[10px] font-bold text-slate-700">{target}</span>
-                                </div>
-                            ))}
-                        </div>
+                        <MappingSummary mapping={job.result.detectedMapping} />
                     )}
 
                     {/* Table Container */}
                     <div className="flex-1 overflow-hidden flex flex-col p-8 pt-4">
-                        {isLoading ? (
-                            <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-400">
-                                <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
-                                <p className="text-sm font-bold uppercase tracking-widest">Fetching records...</p>
-                            </div>
-                        ) : records.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center gap-2 text-slate-400">
-                                <Database className="w-12 h-12 opacity-20" />
-                                <p className="text-sm font-bold uppercase tracking-widest">No records found for this job.</p>
-                            </div>
-                        ) : (
-                            <div
-                                className="flex-1 overflow-auto rounded-2xl border border-slate-200 shadow-sm custom-scrollbar bg-white"
-                            >
-                                <table className="w-full text-left text-sm border-separate border-spacing-0">
-                                    <thead className="sticky top-0 z-10 bg-slate-50 shadow-sm">
-                                        <tr>
-                                            {Object.keys(records[0].data).map(key => (
-                                                <th key={key} className="px-6 py-4 font-black text-slate-400 uppercase tracking-widest text-[9px] border-b border-slate-100 whitespace-nowrap min-w-[200px]">
-                                                    {key}
-                                                </th>
-                                            ))}
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-50">
-                                        {records.map((record: any, idx: number) => (
-                                            <tr key={record._id || idx} className="hover:bg-slate-50/50 transition-colors group">
-                                                {Object.values(record.data).map((val: any, vIdx) => (
-                                                    <td key={vIdx} className="px-6 py-4 text-slate-700 font-bold text-xs border-b border-slate-50/50">
-                                                        <span className="truncate block max-w-[200px]" title={String(val)}>
-                                                            {val === null || val === undefined || val === "" ? '-' : String(val)}
-                                                        </span>
-                                                    </td>
-                                                ))}
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
+                        <ExtractionTable records={records} isLoading={isLoading} />
                     </div>
                 </div>
 

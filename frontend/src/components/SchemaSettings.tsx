@@ -1,18 +1,7 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Hash, Trash2 } from 'lucide-react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
-
-interface RegistryParameter {
-    name: string;
-    type: string;
-    mapping: string;
-}
-
-interface Registry {
-    name: string;
-    parameters: RegistryParameter[];
-}
+import { Registry, RegistryParameter } from '../types';
+import { useUpdateBucketSettings } from '../hooks';
 
 interface SchemaSettingsProps {
     registry: Registry;
@@ -21,18 +10,8 @@ interface SchemaSettingsProps {
 }
 
 const SchemaSettings = ({ registry, bucketId, onBack }: SchemaSettingsProps) => {
-    const queryClient = useQueryClient();
-    const [newParameter, setNewParameter] = useState({ name: '', type: 'text', mapping: '' });
-
-    const updateSettingsMutation = useMutation({
-        mutationFn: (parameters: any[]) => api.put(`/buckets/${bucketId}/settings`, { parameters }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['registry', bucketId] });
-        },
-        onError: (err: any) => {
-            window.alert('Failed to update settings');
-        }
-    });
+    const [newParameter, setNewParameter] = useState<RegistryParameter>({ name: '', type: 'text', mapping: '' });
+    const updateSettingsMutation = useUpdateBucketSettings(bucketId);
 
     const addParameter = () => {
         if (!newParameter.name) return;
@@ -85,8 +64,8 @@ const SchemaSettings = ({ registry, bucketId, onBack }: SchemaSettingsProps) => 
                                 value={newParameter.name}
                                 onChange={e => setNewParameter({ ...newParameter, name: e.target.value })}
                             />
-                            <button onClick={addParameter} disabled={!newParameter.name} className="px-4 py-2 bg-[#2D384A] text-white rounded-lg text-xs font-bold uppercase tracking-widest group-hover:bg-[#A8328D] transition-colors disabled:opacity-50">
-                                Add
+                            <button onClick={addParameter} disabled={!newParameter.name || updateSettingsMutation.isPending} className="px-4 py-2 bg-[#2D384A] text-white rounded-lg text-xs font-bold uppercase tracking-widest group-hover:bg-[#A8328D] transition-colors disabled:opacity-50">
+                                {updateSettingsMutation.isPending ? 'Saving...' : 'Add'}
                             </button>
                         </div>
                     </div>

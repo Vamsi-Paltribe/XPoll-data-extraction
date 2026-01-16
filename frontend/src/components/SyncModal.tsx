@@ -1,23 +1,17 @@
 import { useState, useEffect, ChangeEvent } from 'react';
-import api from '../services/api';
 import { useParams } from 'react-router-dom';
 import clsx from 'clsx';
-import { useQuery, useMutation } from '@tanstack/react-query';
 import {
     X, Globe, Search, Database, Layers, Check,
     ChevronRight, Zap, MapPin, Filter
 } from 'lucide-react';
+import { useDirectory, useBucketHeaders } from '../hooks';
 
 interface SyncModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSync: (filters: { states: string[]; cities: string[]; selectedHeaders: string[] }) => void;
     isSyncing: boolean;
-}
-
-interface DirectoryData {
-    states: { name: string; code?: string; count?: number }[];
-    cities: string[];
 }
 
 const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
@@ -27,38 +21,21 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
     const [selectedHeaders, setSelectedHeaders] = useState<string[]>([]);
 
     // Dynamic Data Fetching
-    const { data: directory, isLoading: loadingDirectory } = useQuery({
-        queryKey: ['global-directory'],
-        queryFn: async () => {
-            const res = await api.get('/buckets/global/directory');
-            return res.data as DirectoryData;
-        },
-        enabled: isOpen,
-        staleTime: 5 * 60 * 1000 // Cache for 5 mins
-    });
+    const { data: directory, isLoading: loadingDirectory } = useDirectory(isOpen);
+    const fetchHeadersMutation = useBucketHeaders(bucketId);
 
-    const stateOptions = directory?.states || [];
-    const cityOptions = directory?.cities || [];
-
-    const { data: availableHeaders = [], mutate: fetchHeaders } = useMutation({
-        mutationFn: async () => {
-            // We can actually use the directory endpoint for headers too if we optimized it, 
-            // but let's stick to the specific header endpoint for now as it's separate logic
-            const res = await api.post(`/buckets/${bucketId}/headers`, {
-                filters: { states: [], cities: [] }
-            });
-            return res.data as string[];
-        },
-        onSuccess: (data: string[]) => {
-            setSelectedHeaders(data);
-        }
-    });
+    const stateOptions = (directory as any)?.states || [];
+    const cityOptions = (directory as any)?.cities || [];
 
     useEffect(() => {
         if (isOpen) {
-            fetchHeaders();
+            fetchHeadersMutation.mutate(undefined, {
+                onSuccess: (data: string[]) => {
+                    setSelectedHeaders(data);
+                }
+            });
         }
-    }, [isOpen, fetchHeaders]);
+    }, [isOpen]);
 
     const toggleState = (code: string) => {
         setSelectedStates(prev =>
@@ -165,7 +142,7 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
                                         No Master Data available yet.
                                     </div>
                                 ) : (
-                                    stateOptions.map(st => {
+                                    stateOptions.map((st: any) => {
                                         const isSelected = selectedStates.includes(st.name);
                                         const count = st.count || 0;
                                         // Visual code just for display
@@ -214,7 +191,7 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
                                         defaultValue=""
                                     >
                                         <option value="" disabled>Select Target Locations</option>
-                                        {cityOptions.map(city => (
+                                        {cityOptions.map((city: string) => (
                                             <option key={city} value={city} disabled={selectedCities.includes(city)}>{city}</option>
                                         ))}
                                     </select>
@@ -244,7 +221,7 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
 
                                 <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
                                     <div className="flex flex-wrap gap-2">
-                                        {availableHeaders.map(h => {
+                                        {(fetchHeadersMutation.data || []).map(h => {
                                             const isSelected = selectedHeaders.includes(h);
                                             return (
                                                 <button

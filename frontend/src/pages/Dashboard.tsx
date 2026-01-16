@@ -1,280 +1,43 @@
-import { useState, memo, useMemo, lazy, Suspense } from 'react';
-import api from '../services/api';
+import { useState, useMemo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Plus,
     Database,
     Search,
-    Clock, X, LayoutGrid,
+    X,
+    LayoutGrid,
     Layers,
-    RotateCcw,
     AlertTriangle,
-    CheckCircle2,
     List,
     Layout,
-    ArrowUpRight,
-    Wallet, Type,
-    Sparkles,
-    CheckIcon
+    Wallet,
+    Sparkles
 } from 'lucide-react';
 import {
     DndContext,
     useSensor,
     useSensors,
     PointerSensor,
-    useDraggable,
-    useDroppable,
     DragOverlay,
     closestCenter,
     defaultDropAnimationSideEffects
 } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 import clsx from 'clsx';
+import { useAuth, useBuckets } from '../hooks';
 
 // Lazy Components
 const ConsolidationWizard = lazy(() => import('../components/ConsolidationWizard'));
 
-const BucketCard = memo(({
-    bucket,
-    isMergeMode,
-    isDraggedOver,
-    onNavigate,
-    onUnmerge,
-    attributes,
-    listeners,
-    setNodeRef,
-    style,
-    isDragging
-}: any) => {
-    return (
-        <div
-            ref={setNodeRef}
-            style={style}
-            {...attributes}
-            {...listeners}
-            onClick={() => !isMergeMode && onNavigate(bucket._id)}
-            className={clsx(
-                "bg-white p-5 rounded-2xl border transition-all duration-300 group relative overflow-hidden cursor-pointer",
-                "shadow-[0px_2px_8px_rgba(45,56,74,0.05)] border-[#2D384A]/10",
-                "hover:shadow-[0px_8px_24px_rgba(168,50,141,0.12)] hover:border-[#A8328D]/30",
-                isMergeMode && "ring-2 ring-[#A8328D]/10",
-                isDraggedOver && "ring-4 ring-[#A8328D] scale-[1.02] shadow-2xl z-20",
-                isDragging ? "opacity-0" : "opacity-100"
-            )}
-        >
-            {/* Hover Accent Line */}
-            <div className="absolute top-0 inset-x-0 h-1 bg-[#A8328D] opacity-0 group-hover:opacity-100 transition-opacity" />
-
-            <div className="flex items-start justify-between mb-4">
-                <div className={clsx(
-                    "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300",
-                    bucket.isMerged ? "bg-[#2D384A] text-[#EEEEEF]" : "bg-[#EEEEEF] text-[#2D384A]"
-                )}>
-                    {bucket.isMerged ? <Layers size={18} /> : <Database size={18} />}
-                </div>
-
-                <div className="flex flex-col items-end gap-1.5">
-                    <div className={clsx(
-                        "px-2.5 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-widest border",
-                        bucket.status === 'paused'
-                            ? "bg-slate-100 text-slate-400 border-slate-200"
-                            : "bg-emerald-50 text-emerald-600 border-emerald-200/50" // High visibility Green
-                    )}>
-                        {bucket.status || 'Active'}
-                    </div>
-                    {bucket.isMerged && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onUnmerge(bucket._id);
-                            }}
-                            className="px-2 py-1 bg-white border border-[#2D384A]/10 text-[#2D384A] rounded-md text-[8px] font-bold uppercase tracking-tighter hover:bg-[#2D384A] hover:text-white transition-all flex items-center gap-1"
-                        >
-                            <RotateCcw size={8} /> Unmerge
-                        </button>
-                    )}
-                </div>
-            </div>
-
-            <div className="mb-4">
-                <h3 title={bucket.name} className="text-sm font-bold text-[#2D384A] group-hover:text-[#A8328D] transition-colors truncate">
-                    {bucket.name}
-                </h3>
-                <div className="flex items-center gap-3 mt-1">
-                    <p className="text-[10px] font-semibold text-slate-400 flex items-center gap-1 uppercase tracking-tighter">
-                        <Clock size={10} className="text-[#A8328D]/60" />
-                        {bucket.lastSyncedAt ? new Date(bucket.lastSyncedAt).toLocaleDateString() : 'New Bucket'}
-                    </p>
-                </div>
-            </div>
-
-            <div className="pt-3 border-t border-[#EEEEEF] flex items-center justify-between">
-                <div className="flex items-baseline gap-1.5">
-                    <span className="text-base font-bold text-[#2D384A]">
-                        {(bucket.recordCount || 0).toLocaleString()}
-                    </span>
-                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Records</span>
-                </div>
-
-                <div className="w-7 h-7 rounded-lg bg-[#EEEEEF] flex items-center justify-center text-[#2D384A] group-hover:bg-[#A8328D] group-hover:text-white transition-all duration-300">
-                    <ArrowUpRight size={14} strokeWidth={3} />
-                </div>
-            </div>
-        </div>
-    );
-});
-
-const BucketListRow = memo(({
-    bucket,
-    isMergeMode,
-    isDraggedOver,
-    onNavigate,
-    onUnmerge,
-    attributes,
-    listeners,
-    setNodeRef,
-    style,
-    isDragging
-}: any) => {
-    return (
-        <div
-            ref={setNodeRef}
-            style={style}
-            {...attributes}
-            {...listeners}
-            onClick={() => !isMergeMode && onNavigate(bucket._id)}
-            className={clsx(
-                "group relative bg-white cursor-pointer transition-all duration-200 border-b border-[#2D384A]/5 last:border-0",
-                "hover:bg-[#EEEEEF]/50 hover:z-10 px-6 py-3",
-                isMergeMode && "bg-[#A8328D]/5",
-                isDraggedOver && "bg-[#EEEEEF] ring-2 ring-inset ring-[#A8328D]/30 scale-[1.005] shadow-lg z-20",
-                isDragging ? "opacity-0" : "opacity-100"
-            )}
-        >
-            <div className="grid grid-cols-[40px_1fr_120px_100px_80px] items-center gap-4">
-
-                {/* 1. ICON */}
-                <div className={clsx(
-                    "w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors",
-                    bucket.isMerged
-                        ? "bg-[#2D384A] text-[#EEEEEF]"
-                        : "bg-[#EEEEEF] text-[#2D384A] group-hover:text-[#A8328D]"
-                )}>
-                    {bucket.isMerged ? <Layers size={16} /> : <Database size={16} />}
-                </div>
-
-                {/* 2. NAME & META */}
-                <div className="min-w-0">
-                    <h3 className="text-sm font-bold text-[#2D384A] group-hover:text-[#A8328D] transition-colors truncate">
-                        {bucket.name}
-                    </h3>
-                    <div className="flex items-center gap-3 mt-0.5">
-                        <p className="text-[10px] font-bold text-[#2D384A] uppercase tracking-tighter flex items-center gap-1">
-                            <Clock size={10} className="text-[#A8328D]/50" />
-                            {bucket.lastSyncedAt ? new Date(bucket.lastSyncedAt).toLocaleDateString() : 'New Bucket'}
-                        </p>
-                    </div>
-                </div>
-
-                {/* 3. RECORDS (Fixed width keeps numbers aligned) */}
-                <div className="text-right pr-6">
-                    <p className="text-[14px] font-bold text-[#2D384A] tracking-tight leading-none">
-                        {(bucket.recordCount || 0).toLocaleString()}
-                    </p>
-                    <p className="text-[8px] font-bold text-[#2D384A]/30 uppercase tracking-widest mt-0.5">Records</p>
-                </div>
-
-                {/* 4. STATUS (Emerald Green for Active) */}
-                <div className="flex justify-center">
-                    <div className={clsx(
-                        "px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border text-center w-full max-w-[80px]",
-                        bucket.status === 'paused'
-                            ? "bg-slate-100 text-slate-400 border-slate-200"
-                            : "bg-emerald-50 text-emerald-600 border-emerald-200/50" // High visibility Green
-                    )}>
-                        {bucket.status || 'Active'}
-                    </div>
-                </div>
-
-                {/* 5. ACTIONS (Placeholder space even if empty to prevent jumping) */}
-                <div className="flex items-center justify-end gap-1 min-w-[80px]">
-                    {bucket.isMerged ? (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                onUnmerge(bucket._id);
-                            }}
-                            className="inline-flex gap-1.5 p-1.5 text-[#2D384A] hover:text-red-600 hover:bg-red-50 rounded-md transition-all"
-                            title="Unmerge"
-                        >
-                            <RotateCcw size={14} />
-                            <span className="text-[10px] font-bold uppercase tracking-tight">Unmerge</span>
-                        </button>
-                    ) : (
-                        <div className="w-[26px]" />
-                    )}
-
-                    <div className="w-8 h-8 rounded-md flex items-center justify-center text-[#2D384A]/20 group-hover:bg-[#A8328D] group-hover:text-white transition-all duration-300">
-                        <ArrowUpRight size={16} strokeWidth={2.5} />
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-});
-
-const DraggableDroppableBucket = ({ bucket, isMergeMode, navigate, setUnmergingBucketId, viewType }: any) => {
-    const {
-        attributes,
-        listeners,
-        setNodeRef: setDraggableRef,
-        transform,
-        isDragging,
-    } = useDraggable({
-        id: `draggable-${bucket._id}`,
-        disabled: !isMergeMode,
-        data: { bucket }
-    });
-
-    const { setNodeRef: setDroppableRef, isOver } = useDroppable({
-        id: bucket._id,
-        disabled: !isMergeMode,
-        data: { bucket }
-    });
-
-    // Combine refs
-    const setNodeRefs = (el: HTMLElement | null) => {
-        setDraggableRef(el);
-        setDroppableRef(el);
-    };
-
-    const style = {
-        transform: CSS.Translate.toString(transform),
-        zIndex: isDragging ? 100 : 1,
-    };
-
-    const props = {
-        bucket,
-        isMergeMode,
-        isDraggedOver: isOver && !isDragging,
-        onNavigate: (id: string) => navigate(`/registry/${id}`),
-        onUnmerge: (id: string) => setUnmergingBucketId(id),
-        attributes,
-        listeners,
-        setNodeRef: setNodeRefs,
-        style,
-        isDragging
-    };
-
-    return viewType === 'grid' ? <BucketCard {...props} /> : <BucketListRow {...props} />;
-};
+import {
+    DraggableDroppableBucket,
+    BucketCard,
+    UnmergeOption
+} from '../components/dashboard';
 
 const DEFAULT_SCHEMA_FIELDS = ['Name', 'Address', 'City', 'State', 'Zip', 'Party'];
 
 const Dashboard = () => {
-    const queryClient = useQueryClient();
     const navigate = useNavigate();
     const [showModal, setShowModal] = useState(false);
     const [newRegistry, setNewRegistry] = useState({ name: '', description: '' });
@@ -294,56 +57,10 @@ const Dashboard = () => {
 
     // View States
     const [viewType, setViewType] = useState<'grid' | 'list'>('grid');
-    const { data: user } = useQuery({
-        queryKey: ['user-me'],
-        queryFn: async () => {
-            const res = await api.get('/auth/me');
-            return res.data;
-        }
-    });
 
-    const { data: registries = [], isPending: isLoading } = useQuery({
-        queryKey: ['registries'],
-        queryFn: async () => {
-            const res = await api.get('/buckets');
-            return res.data as {
-                _id: string;
-                name: string;
-                description?: string;
-                recordCount?: number;
-                lastSyncedAt?: string,
-                status?: 'active' | 'paused',
-                isMerged?: boolean,
-                hiddenByMerge?: boolean,
-                parentLineage?: {
-                    parents: string[];
-                    mergedAt: string;
-                }
-            }[];
-        }
-    });
-
-    // Mutations
-    const createRegistryMutation = useMutation({
-        mutationFn: (data: { name: string; description: string; parameters: any[] }) => api.post('/buckets', data),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['registries'] });
-            setShowModal(false);
-            setNewRegistry({ name: '', description: '' });
-            setSchemaFields([]);
-        },
-        onError: () => {
-            window.alert('Failed to initialize registry');
-        }
-    });
-
-    const unmergeMutation = useMutation({
-        mutationFn: ({ id, action }: { id: string, action: string }) => api.post(`/merge/unmerge/${id}`, { newDataAction: action }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['registries'] });
-            setUnmergingBucketId(null);
-        }
-    });
+    // --- Hooks ---
+    const { user } = useAuth();
+    const { buckets: registries, createBucket, unmergeBucket, isPending: isLoading } = useBuckets();
 
     const sensors = useSensors(
         useSensor(PointerSensor, useMemo(() => ({
@@ -396,9 +113,18 @@ const Dashboard = () => {
             type: 'text', // Default to text
         }));
 
-        createRegistryMutation.mutate({
+        createBucket.mutate({
             ...newRegistry,
             parameters
+        }, {
+            onSuccess: () => {
+                setShowModal(false);
+                setNewRegistry({ name: '', description: '' });
+                setSchemaFields([]);
+            },
+            onError: () => {
+                window.alert('Failed to initialize registry');
+            }
         });
     };
 
@@ -411,7 +137,7 @@ const Dashboard = () => {
         </div>
     );
 
-    const filteredRegistries = registries.filter(bucket =>
+    const filteredRegistries = (registries as any[]).filter(bucket =>
         (bucket.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             bucket.description?.toLowerCase().includes(searchQuery.toLowerCase())) &&
         !bucket.hiddenByMerge // Backend handles this too, but for safety
@@ -576,7 +302,7 @@ const Dashboard = () => {
                     {activeId ? (
                         <div className="scale-105 rotate-2 brightness-105 shadow-2xl transition-transform duration-200">
                             <BucketCard
-                                bucket={registries.find(r => `draggable-${r._id}` === activeId)}
+                                bucket={(registries as any[]).find(r => `draggable-${r._id}` === activeId)}
                                 isMergeMode={isMergeMode}
                                 isDraggedOver={false}
                                 onNavigate={() => { }}
@@ -653,10 +379,12 @@ const Dashboard = () => {
                                     Abort
                                 </button>
                                 <button
-                                    onClick={() => unmergeMutation.mutate({ id: unmergingBucketId, action: newDataAction })}
+                                    onClick={() => unmergeBucket.mutate({ id: unmergingBucketId, action: newDataAction }, {
+                                        onSuccess: () => setUnmergingBucketId(null)
+                                    })}
                                     className="flex-[2] px-8 py-4 bg-[#2D384A] text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-[#A8328D] transition-all shadow-lg shadow-[#2D384A]/10"
                                 >
-                                    {unmergeMutation.isPending ? 'Processing...' : 'Confirm Restoration'}
+                                    {unmergeBucket.isPending ? 'Processing...' : 'Confirm Restoration'}
                                 </button>
                             </div>
                         </div>
@@ -738,11 +466,6 @@ const Dashboard = () => {
                                                             : "bg-white text-[#2D384A] border-[#EEEEEF] hover:border-[#A8328D] shadow-sm"
                                                     )}
                                                 >
-                                                    {isActive ? (
-                                                        <CheckIcon className="inline w-3.5 h-3.5 mr-2 mb-0.5 text-[#A8328D]" strokeWidth={3} />
-                                                    ) : (
-                                                        <Plus className="inline w-3.5 h-3.5 mr-2 mb-0.5 opacity-40" strokeWidth={3} />
-                                                    )}
                                                     {field.toUpperCase()}
                                                 </button>
                                             );
@@ -801,14 +524,14 @@ const Dashboard = () => {
                                     onClick={() => setShowModal(false)}
                                     className="px-8 py-5 text-[11px] font-black text-[#2D384A] hover:bg-[#F4F4F5] rounded-[20px] transition-all uppercase tracking-[0.2em]"
                                 >
-                                    Discard
+                                    Cancel
                                 </button>
                                 <button
                                     onClick={handleCreateRegistry}
-                                    disabled={!newRegistry.name || schemaFields.length === 0 || createRegistryMutation.isPending}
+                                    disabled={!newRegistry.name || schemaFields.length === 0}
                                     className="flex-1 px-8 py-5 bg-[#2D384A] text-white rounded-[22px] text-[11px] font-black uppercase tracking-[0.2em] transition-all hover:bg-[#A8328D] hover:shadow-2xl hover:shadow-[#A8328D]/30 active:scale-[0.97] disabled:opacity-10 shadow-xl shadow-[#2D384A]/20"
                                 >
-                                    {createRegistryMutation.isPending ? 'Processing...' : 'Create Bucket'}
+                                    {createBucket.isPending ? 'Processing...' : 'Deploy Registry'}
                                 </button>
                             </div>
                         </div>
@@ -818,22 +541,5 @@ const Dashboard = () => {
         </div>
     );
 };
-
-const UnmergeOption = ({ title, desc, active, onClick }: any) => (
-    <div
-        onClick={onClick}
-        className={`p-5 rounded-3xl border-2 transition-all cursor-pointer flex items-center gap-4 ${active ? "bg-indigo-50/50 border-indigo-600 shadow-xl shadow-indigo-500/5" : "bg-white border-slate-50 hover:border-slate-200"
-            }`}
-    >
-        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${active ? "border-indigo-600 bg-indigo-600" : "border-slate-200"
-            }`}>
-            {active && <CheckCircle2 className="w-4 h-4 text-white" />}
-        </div>
-        <div>
-            <p className="text-sm font-black text-slate-900">{title}</p>
-            <p className="text-[11px] text-slate-500 font-bold">{desc}</p>
-        </div>
-    </div>
-);
 
 export default Dashboard;

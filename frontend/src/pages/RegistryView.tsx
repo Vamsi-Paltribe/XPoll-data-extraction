@@ -1,16 +1,17 @@
 import { useState, lazy, Suspense } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import api from '../services/api';
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useParams } from 'react-router-dom';
 import {
-    ArrowLeft,
-    ChevronRight,
-    Download,
-    Database,
-    Clock, UploadCloud
+    Database
 } from 'lucide-react';
 
 import GlobalStyles from '../components/GlobalStyles';
+import { Job } from '../types';
+import { useBucket, useRegistryRecords, useJobs, useSyncRegistry } from '../hooks';
+
+import {
+    WorkspaceHeader,
+    WorkspaceDragOverlay
+} from '../components/workspace';
 
 // Lazy Components
 const SyncModal = lazy(() => import('../components/SyncModal'));
@@ -25,51 +26,8 @@ const ComponentLoader = () => (
     </div>
 );
 
-// --- Interfaces ---
-interface RegistryParameter {
-    name: string;
-    type: string;
-    mapping: string;
-}
-
-interface Registry {
-    name: string;
-    parameters: RegistryParameter[];
-}
-
-interface RecordData {
-    [key: string]: any;
-}
-
-interface Record {
-    _id?: string;
-    data: RecordData;
-    status?: 'conflict' | 'valid' | string;
-    [key: string]: any;
-}
-
-interface Job {
-    _id: string;
-    originalName: string;
-    status: 'queued' | 'processing' | 'completed' | 'failed' | 'waiting_approval' | 'rejected' | 'paused';
-    result?: any;
-    createdAt: string;
-    tokensConsumed?: number;
-    error?: string;
-}
-
-interface PaginatedResponse {
-    data: Record[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-}
-
 const RegistryView = () => {
     const { id } = useParams();
-    const navigate = useNavigate();
-    const queryClient = useQueryClient();
 
     // State
     const [dragActive, setDragActive] = useState(false);
@@ -83,103 +41,15 @@ const RegistryView = () => {
     const [page, setPage] = useState(1);
     const LIMIT = 20;
 
-    // --- Queries ---
-    const { data: registry, isPending: loadingRegistry } = useQuery({
-        queryKey: ['registry', id],
-        queryFn: async () => {
-            const res = await api.get(`/buckets/${id}`);
-            return res.data as Registry;
-        }
-    });
-
-    // Updated Query for Pagination
-    const { data: customerData } = useQuery({
-        queryKey: ['registry-customers', id, page],
-        queryFn: async () => {
-            try {
-                const res = await api.get<PaginatedResponse>(`/buckets/${id}/customer?page=${page}&limit=${LIMIT}`);
-                // Handle backward compatibility if API returns array (just in case deployment lag)
-                if (Array.isArray(res.data)) {
-                    return { data: res.data, total: res.data.length, page: 1, limit: 1000, totalPages: 1 };
-                }
-                return res.data;
-            } catch (e) { return { data: [], total: 0, page: 1, limit: LIMIT, totalPages: 0 }; }
-        },
-        placeholderData: (previousData) => previousData // Keep previous data while fetching new page
-    });
+    // --- Hooks ---
+    const { data: registry, isPending: loadingRegistry } = useBucket(id);
+    const { data: customerData } = useRegistryRecords(id, page, LIMIT);
+    const { jobs, approveJob, rejectJob } = useJobs(id);
+    const syncMutation = useSyncRegistry(id);
 
     const customerRecords = customerData?.data || [];
     const totalRecords = customerData?.total || 0;
-
-    const { data: user } = useQuery({
-        queryKey: ['user-me'],
-        queryFn: async () => {
-            const res = await api.get('/auth/me');
-            return res.data;
-        }
-    });
-
-    const { data: jobsData } = useInfiniteQuery({
-        queryKey: ['jobs-infinite', id],
-        queryFn: async ({ pageParam = 1 }) => {
-            if (!id) return { jobs: [], pagination: { total: 0, page: 1, limit: 20, pages: 0 } };
-            const res = await api.get<{ jobs: Job[], pagination: any } | Job[]>(`/jobs/bucket/${id}?page=${pageParam}&limit=20`);
-
-            // Handle legacy array response
-            if (Array.isArray(res.data)) {
-                return {
-                    jobs: res.data,
-                    pagination: { total: res.data.length, page: 1, limit: 1000, pages: 1 }
-                };
-            }
-            return res.data;
-        },
-        getNextPageParam: (lastPage) => {
-            if (!lastPage || !lastPage.pagination) return undefined;
-            const { page, pages } = lastPage.pagination;
-            return page < pages ? page + 1 : undefined;
-        },
-        enabled: !!id,
-        refetchInterval: 5000,
-        initialPageParam: 1
-    });
-
-    const jobs = jobsData?.pages.flatMap(page => page.jobs) || [];
-
     const approvalJobs = jobs?.filter(j => j.status === 'waiting_approval') || [];
-
-    // --- Mutations ---
-    const syncMutation = useMutation({
-        mutationFn: (filters: any) => api.post(`/buckets/${id}/sync`, { filters }),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['registry-customers', id] });
-            queryClient.invalidateQueries({ queryKey: ['registry', id] });
-            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', id] });
-            setShowSyncModal(false);
-        }
-    });
-
-    const approveMutation = useMutation({
-        mutationFn: async ({ jobId, options }: { jobId: string, options?: any }) =>
-            api.post(`/jobs/${jobId}/approve`, options),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', id] });
-            queryClient.invalidateQueries({ queryKey: ['registry-customers', id] });
-            setSelectedReviewJob(null);
-        },
-        onError: (err: any) => {
-            window.alert('Failed to approve job: ' + (err.response?.data?.error || err.message));
-        }
-    });
-
-    const rejectMutation = useMutation({
-        mutationFn: async (jobId: string) => api.post(`/jobs/${jobId}/reject`),
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['jobs-infinite', id] });
-            setSelectedReviewJob(null);
-        }
-    });
-
 
     // Drag & Drop Handlers (Full Screen)
     const handleDrag = (e: React.DragEvent) => {
@@ -228,7 +98,8 @@ const RegistryView = () => {
     );
 
     const onNextPage = () => {
-        if (page < (customerData?.totalPages || 1)) setPage(p => p + 1);
+        const totalPages = customerData?.totalPages || 1;
+        if (page < totalPages) setPage(p => p + 1);
     };
 
     const onPrevPage = () => {
@@ -246,55 +117,15 @@ const RegistryView = () => {
 
             {/* Global Drag Overlay */}
             {dragActive && (
-                <div
-                    onDragLeave={() => setDragActive(false)}
-                    className="fixed inset-0 z-[200] bg-[#2D384A]/90 backdrop-blur-sm flex items-center justify-center animate-in fade-in"
-                >
-                    <div className="text-center pointer-events-none">
-                        <div className="w-24 h-24 bg-white/10 rounded-3xl flex items-center justify-center mx-auto mb-8 animate-bounce">
-                            <UploadCloud className="text-white w-10 h-10" />
-                        </div>
-                        <h2 className="text-3xl font-extrabold text-white mb-2">Drop to Analyze</h2>
-                        <p className="text-slate-400 font-medium">Agent will process this file against the schema.</p>
-                    </div>
-                </div>
+                <WorkspaceDragOverlay onDragLeave={() => setDragActive(false)} />
             )}
 
             {/* Header */}
-            <header className="px-8 py-5 flex items-center justify-between sticky top-0 z-20 backdrop-blur-sm rounded-2xl bg-white">
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={() => navigate('/')}
-                        className="w-10 h-10 rounded-xl bg-black text-white flex items-center justify-center text-slate-500 transition-all shadow-sm"
-                    >
-                        <ArrowLeft size={18} strokeWidth={2.5} />
-                    </button>
-                    <div>
-                        <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                            <span>Buckets</span>
-                            <ChevronRight size={10} />
-                            <span className="text-[#A8328D]">Workspace</span>
-                        </div>
-                        <h1 className="text-xl font-extrabold text-[#2D384A] tracking-tight">{registry?.name || 'Loading...'}</h1>
-                    </div>
-                </div>
-
-                <div className="flex items-center gap-4">
-                    <div className="hidden md:flex items-center gap-3 px-4 py-2 bg-white rounded-xl shadow-sm border border-slate-100">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-wide">Records</span>
-                        <span className="text-sm font-bold text-[#2D384A]">{totalRecords.toLocaleString()}</span>
-                    </div>
-                    <button
-                        onClick={() => setShowSyncModal(true)}
-                        className="bg-white text-[#2D384A] px-5 py-2.5 rounded-[16px] text-xs font-bold uppercase tracking-wider hover:shadow-lg transition-all flex items-center gap-2 border border-slate-200"
-                    >
-                        <Clock size={16} className="text-[#F7A25A]" /> Download Data
-                    </button>
-                    <button className="bg-[#2D384A] text-white px-5 py-2.5 rounded-[16px] text-xs font-bold uppercase tracking-wider hover:shadow-lg hover:shadow-[#2D384A]/20 transition-all flex items-center gap-2">
-                        <Download size={16} /> Export
-                    </button>
-                </div>
-            </header>
+            <WorkspaceHeader
+                name={registry?.name || 'Loading...'}
+                totalRecords={totalRecords}
+                onSyncClick={() => setShowSyncModal(true)}
+            />
 
             {/* Split Screen Content */}
             <div className="flex-1 grid grid-cols-12 gap-6 overflow-hidden">
@@ -308,7 +139,7 @@ const RegistryView = () => {
                                 totalCount={totalRecords}
 
                                 // Pagination
-                                onNextPage={customerData?.page && customerData.page < customerData.totalPages ? onNextPage : undefined}
+                                onNextPage={(customerData?.page || page) < (customerData?.totalPages || 1) ? onNextPage : undefined}
                                 onPrevPage={page > 1 ? onPrevPage : undefined}
                                 pageInfo={`Page ${page} of ${customerData?.totalPages || 1}`}
 
@@ -340,7 +171,6 @@ const RegistryView = () => {
                     <Suspense fallback={<ComponentLoader />}>
                         <AgentConsole
                             bucketId={id}
-                            userTokens={user?.tokens}
                             initialFile={droppedFile}
                         />
                     </Suspense>
@@ -364,10 +194,14 @@ const RegistryView = () => {
                             job={selectedReviewJob}
                             onClose={() => setSelectedReviewJob(null)}
                             onApprove={(jobId: string, options?: any) => {
-                                approveMutation.mutate({ jobId, options });
+                                approveJob.mutate({ jobId, options }, {
+                                    onSuccess: () => setSelectedReviewJob(null)
+                                });
                             }}
-                            onReject={(id: string) => rejectMutation.mutate(id)}
-                            isProcessing={approveMutation.isPending || rejectMutation.isPending}
+                            onReject={(id: string) => rejectJob.mutate(id, {
+                                onSuccess: () => setSelectedReviewJob(null)
+                            })}
+                            isProcessing={approveJob.isPending || rejectJob.isPending}
                         />
                     </div>
                 )}

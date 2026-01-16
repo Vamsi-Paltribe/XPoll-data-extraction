@@ -1,30 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import api from '../services/api';
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useJobs, useActiveJobs } from '../hooks';
 
 const NotificationBar = () => {
-    const queryClient = useQueryClient();
-    const { data: activeJobs } = useQuery({
-        queryKey: ['active-jobs'],
-        queryFn: async () => {
-            const res = await api.get('/jobs/active');
-            return res.data;
-        },
-        refetchInterval: 50000 // Poll every 5min for real-time vibe
-    });
-
-    const approveMutation = useMutation({
-        mutationFn: async (jobId: string) => {
-            await api.post(`/jobs/${jobId}/approve`);
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['active-jobs'] });
-            queryClient.invalidateQueries({ queryKey: ['bucket-jobs'] }); // Refresh views
-        }
-    });
+    const { data: activeJobs } = useActiveJobs();
+    const { approveJob } = useJobs(undefined);
 
     if (!activeJobs || activeJobs.length === 0) return null;
 
@@ -68,11 +50,11 @@ const NotificationBar = () => {
                     {primaryJob.status === 'waiting_approval' && (
                         <div className="flex items-center gap-2 ml-4">
                             <button
-                                onClick={() => approveMutation.mutate(primaryJob._id)}
-                                disabled={approveMutation.isPending}
+                                onClick={() => approveJob.mutate({ jobId: primaryJob._id })}
+                                disabled={approveJob.isPending}
                                 className="px-3 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 rounded-md text-xs font-bold transition-colors flex items-center gap-1"
                             >
-                                {approveMutation.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Approve & Commit"}
+                                {approveJob.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : "Approve & Commit"}
                             </button>
                             <Link to={`/registry/${primaryJob.bucketId}`} className="text-xs underline hover:text-amber-600">
                                 View Details

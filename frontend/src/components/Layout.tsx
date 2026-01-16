@@ -1,7 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { clsx } from 'clsx';
-import api from '../services/api';
 import {
     LogOut,
     Database,
@@ -9,21 +8,14 @@ import {
     Wallet,
     Coins
 } from 'lucide-react';
-
-import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '../hooks';
 
 interface LayoutProps {
     children: ReactNode;
 }
 
 const Layout = ({ children }: LayoutProps) => {
-    const { data: user } = useQuery({
-        queryKey: ['user-me'],
-        queryFn: async () => {
-            const res = await api.get('/auth/me');
-            return res.data as { tokens: number };
-        }
-    });
+    const { user } = useAuth();
 
     const location = useLocation();
     const isDashboard = location.pathname === '/';

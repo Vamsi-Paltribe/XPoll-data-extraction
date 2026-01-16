@@ -3,6 +3,9 @@ import react from 'eslint-plugin-react';
 import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
+  {
+    ignores: ['dist/**', 'node_modules/**', '.next/**', 'build/**', '.gemini/**'],
+  },
   js.configs.recommended,
   {
     files: ['**/*.{js,jsx}'],
@@ -33,6 +36,8 @@ export default [
         setInterval: 'readonly',
         clearInterval: 'readonly',
         Promise: 'readonly',
+        localStorage: 'readonly',
+        fetch: 'readonly',
       },
     },
     settings: {
