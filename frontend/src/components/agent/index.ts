@@ -3,3 +3,4 @@ export * from './ChatWindow';
 export * from './ChatInput';
 export * from './JobHistory';
 export * from './MessageItem';
+export * from './useAgentConsole';

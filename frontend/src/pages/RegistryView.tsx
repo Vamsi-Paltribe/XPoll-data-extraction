@@ -1,4 +1,4 @@
-import { useState, lazy, Suspense } from 'react';
+import { lazy, Suspense } from 'react';
 import { useParams } from 'react-router-dom';
 import {
     Database
@@ -6,12 +6,10 @@ import {
 
 import GlobalStyles from '../components/GlobalStyles';
 import { Job } from '../types';
-import { useBucket, useRegistryRecords, useJobs, useSyncRegistry } from '../hooks';
+import { useRegistryView } from '../components/registry';
 
-import {
-    WorkspaceHeader,
-    WorkspaceDragOverlay
-} from '../components/workspace';
+const RegistryHeader = lazy(() => import('../components/registry').then(module => ({ default: module.RegistryHeader })));
+const RegistryDragOverlay = lazy(() => import('../components/registry').then(module => ({ default: module.RegistryDragOverlay })));
 
 // Lazy Components
 const SyncModal = lazy(() => import('../components/SyncModal'));
@@ -28,64 +26,27 @@ const ComponentLoader = () => (
 
 const RegistryView = () => {
     const { id } = useParams();
-
-    // State
-    const [dragActive, setDragActive] = useState(false);
-    const [droppedFile, setDroppedFile] = useState<File | null>(null);
-    const [showSyncModal, setShowSyncModal] = useState(false);
-    const [selectedReviewJob, setSelectedReviewJob] = useState<Job | null>(null);
-
-    // View State
-    const [activeFilter, setActiveFilter] = useState<string>('all');
-    const [viewMode, setViewMode] = useState<'grid' | 'schema'>('grid');
-    const [page, setPage] = useState(1);
-    const LIMIT = 20;
-
-    // --- Hooks ---
-    const { data: registry, isPending: loadingRegistry } = useBucket(id);
-    const { data: customerData } = useRegistryRecords(id, page, LIMIT);
-    const { jobs, approveJob, rejectJob } = useJobs(id);
-    const syncMutation = useSyncRegistry(id);
-
-    const customerRecords = customerData?.data || [];
-    const totalRecords = customerData?.total || 0;
-    const approvalJobs = jobs?.filter(j => j.status === 'waiting_approval') || [];
-
-    // Drag & Drop Handlers (Full Screen)
-    const handleDrag = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.type === "dragenter" || e.type === "dragover") {
-            setDragActive(true);
-        } else if (e.type === "dragleave") {
-            if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
-                setDragActive(false);
-            }
-        }
-    };
-
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
-        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            handleFileDrop(e.dataTransfer.files[0]);
-        }
-    };
-
-    const handleFileDrop = (file: File) => {
-        if (!registry?.parameters || registry.parameters.length === 0) {
-            window.alert('⚠️ Please define parameters in Settings first.');
-            return;
-        }
-        setDroppedFile(file);
-    };
-
-    const getDisplayColumns = () => {
-        const params = registry?.parameters || [];
-        const paramResult = params.map(p => p.mapping || p.name);
-        return paramResult.length > 0 ? paramResult : (customerRecords[0]?.data ? Object.keys(customerRecords[0].data).filter((k: string) => k !== '__v') : []);
-    };
+    const {
+        dragActive, setDragActive,
+        droppedFile,
+        showSyncModal, setShowSyncModal,
+        selectedReviewJob, setSelectedReviewJob,
+        activeFilter, setActiveFilter,
+        viewMode, setViewMode,
+        page,
+        registry, loadingRegistry,
+        customerData,
+        customerRecords,
+        totalRecords,
+        approvalJobs,
+        syncMutation,
+        approveJob, rejectJob,
+        handleDrag,
+        handleDrop,
+        getDisplayColumns,
+        onNextPage,
+        onPrevPage
+    } = useRegistryView(id);
 
     if (loadingRegistry) return (
         <div className="flex flex-col h-screen items-center justify-center bg-[#f0f4f9]">
@@ -96,15 +57,6 @@ const RegistryView = () => {
             <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400 animate-pulse">Loading Workspace</p>
         </div>
     );
-
-    const onNextPage = () => {
-        const totalPages = customerData?.totalPages || 1;
-        if (page < totalPages) setPage(p => p + 1);
-    };
-
-    const onPrevPage = () => {
-        if (page > 1) setPage(p => p - 1);
-    };
 
     return (
         <div
@@ -117,11 +69,11 @@ const RegistryView = () => {
 
             {/* Global Drag Overlay */}
             {dragActive && (
-                <WorkspaceDragOverlay onDragLeave={() => setDragActive(false)} />
+                <RegistryDragOverlay onDragLeave={() => setDragActive(false)} />
             )}
 
             {/* Header */}
-            <WorkspaceHeader
+            <RegistryHeader
                 name={registry?.name || 'Loading...'}
                 totalRecords={totalRecords}
                 onSyncClick={() => setShowSyncModal(true)}

@@ -1,25 +1,130 @@
-import React from 'react';
+import { FC, useEffect, useMemo, useState } from 'react';
 import { X, Database, Check as CheckIcon, Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import clsx from 'clsx';
 import DataGrid from './DataGrid';
+import { PaginatedResponse } from '../types';
 
 interface QueryResultModalProps {
     isOpen: boolean;
     onClose: () => void;
     queryPrompt: string;
     records: any[];
-    pagination: {
-        page: number;
-        limit: number;
-        total: number;
-        pages: number;
-    };
+    pagination: PaginatedResponse<any>;
     onPageChange: (newPage: number) => void;
     onExport?: (format: 'xlsx' | 'csv', columns: string[]) => Promise<void>;
 }
 
-const QueryResultModal: React.FC<QueryResultModalProps> = ({
+const ExportMenu = ({
+    isOpen,
+    onClose,
+    availableColumns,
+    onExport
+}: {
+    isOpen: boolean,
+    onClose: () => void,
+    availableColumns: string[],
+    onExport: (format: 'xlsx' | 'csv', columns: string[]) => Promise<void>
+}) => {
+    const [exportFormat, setExportFormat] = useState<'xlsx' | 'csv'>('csv');
+    const [selectedColumns, setSelectedColumns] = useState<Set<string>>(new Set(availableColumns));
+    const [isExporting, setIsExporting] = useState(false);
+
+    useEffect(() => {
+        setSelectedColumns(new Set(availableColumns));
+    }, [availableColumns]);
+
+    const handleExecute = async () => {
+        setIsExporting(true);
+        try {
+            await onExport(exportFormat, Array.from(selectedColumns));
+            onClose();
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    const toggleColumn = (col: string) => {
+        const newSet = new Set(selectedColumns);
+        if (newSet.has(col)) newSet.delete(col);
+        else newSet.add(col);
+        setSelectedColumns(newSet);
+    };
+
+    if (!isOpen) return null;
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 5 }}
+            className="absolute top-full right-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-[#EEEEEF] p-6 z-[50]"
+            onClick={(e) => e.stopPropagation()}
+        >
+            <div className="space-y-6">
+                <div>
+                    <label className="text-[9px] font-bold text-[#2D384A]/40 uppercase tracking-widest mb-3 block">File Architecture</label>
+                    <div className="grid grid-cols-2 gap-2">
+                        <button
+                            onClick={() => setExportFormat('csv')}
+                            className={clsx(
+                                "px-3 py-3 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-2",
+                                exportFormat === 'csv' ? "bg-[#2D384A] text-white border-[#2D384A]" : "bg-white text-[#2D384A]/60 border-[#EEEEEF] hover:border-[#2D384A]/20"
+                            )}
+                        >
+                            <FileText className="w-3.5 h-3.5" /> CSV
+                        </button>
+                        <button
+                            onClick={() => setExportFormat('xlsx')}
+                            className={clsx(
+                                "px-3 py-3 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-2",
+                                exportFormat === 'xlsx' ? "bg-[#A8328D] text-white border-[#A8328D]" : "bg-white text-[#2D384A]/60 border-[#EEEEEF] hover:border-[#2D384A]/20"
+                            )}
+                        >
+                            <FileSpreadsheet className="w-3.5 h-3.5" /> EXCEL
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div className="flex justify-between items-center mb-3">
+                        <label className="text-[9px] font-bold text-[#2D384A]/40 uppercase tracking-widest">Fields</label>
+                        <button
+                            onClick={() => setSelectedColumns(selectedColumns.size === availableColumns.length ? new Set() : new Set(availableColumns))}
+                            className="text-[9px] font-bold text-[#A8328D] hover:underline uppercase"
+                        >
+                            {selectedColumns.size === availableColumns.length ? 'Clear' : 'Select All'}
+                        </button>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
+                        {availableColumns.map(col => (
+                            <label key={col} className="flex items-center gap-3 p-2 hover:bg-[#EEEEEF]/50 rounded-xl cursor-pointer group transition-colors">
+                                <div className={clsx(
+                                    "w-4 h-4 rounded-md border flex items-center justify-center transition-all",
+                                    selectedColumns.has(col) ? "bg-[#2D384A] border-[#2D384A]" : "border-[#EEEEEF] bg-white group-hover:border-[#2D384A]/30"
+                                )}>
+                                    {selectedColumns.has(col) && <CheckIcon className="w-2.5 h-2.5 text-white" />}
+                                </div>
+                                <input type="checkbox" className="hidden" checked={selectedColumns.has(col)} onChange={() => toggleColumn(col)} />
+                                <span className="text-xs font-bold text-[#2D384A]/70 truncate uppercase tracking-tight">{col.replace(/_/g, ' ')}</span>
+                            </label>
+                        ))}
+                    </div>
+                </div>
+
+                <button
+                    onClick={handleExecute}
+                    disabled={isExporting || selectedColumns.size === 0}
+                    className="w-full py-4 bg-[#2D384A] hover:bg-[#A8328D] disabled:opacity-20 text-white rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all shadow-xl shadow-[#2D384A]/10"
+                >
+                    {isExporting ? 'Transmitting...' : 'Execute Export'}
+                </button>
+            </div>
+        </motion.div>
+    );
+};
+
+const QueryResultModal: FC<QueryResultModalProps> = ({
     isOpen,
     onClose,
     queryPrompt,
@@ -28,45 +133,13 @@ const QueryResultModal: React.FC<QueryResultModalProps> = ({
     onPageChange,
     onExport
 }) => {
-    const [exportFormat, setExportFormat] = React.useState<'xlsx' | 'csv'>('csv');
-    const [selectedColumns, setSelectedColumns] = React.useState<Set<string>>(new Set());
-    const [isExportMenuOpen, setIsExportMenuOpen] = React.useState(false);
-    const [isExporting, setIsExporting] = React.useState(false);
+    const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
-    const availableColumns = React.useMemo(() => {
+    const availableColumns = useMemo(() => {
         return records.length > 0 && records[0].data ? Object.keys(records[0].data) : ['Name', 'City', 'State', 'Category'];
     }, [records]);
 
-    React.useEffect(() => {
-        if (isOpen && availableColumns.length > 0) {
-            setSelectedColumns(new Set(availableColumns));
-        }
-    }, [isOpen, availableColumns]);
-
     if (!isOpen) return null;
-
-    const handleExportClick = async () => {
-        if (!onExport) return;
-        setIsExporting(true);
-        try {
-            await onExport(exportFormat, Array.from(selectedColumns));
-            setIsExportMenuOpen(false);
-        } catch (error) {
-            console.error("Export failed", error);
-        } finally {
-            setIsExporting(false);
-        }
-    };
-
-    const toggleColumn = (col: string) => {
-        const newSet = new Set(selectedColumns);
-        if (newSet.has(col)) {
-            newSet.delete(col);
-        } else {
-            newSet.add(col);
-        }
-        setSelectedColumns(newSet);
-    };
 
     return (
         <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 sm:p-8 bg-[#2D384A]/60 backdrop-blur-md">
@@ -102,81 +175,17 @@ const QueryResultModal: React.FC<QueryResultModalProps> = ({
                                         className="px-6 py-3.5 bg-[#2D384A] text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-[#A8328D] hover:text-white transition-all flex items-center gap-3 border border-transparent active:scale-95"
                                     >
                                         <Download className="w-4 h-4" />
-                                        {isExporting ? 'Processing...' : 'Export'}
+                                        Export
                                     </button>
 
                                     <AnimatePresence>
                                         {isExportMenuOpen && (
-                                            <motion.div
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                exit={{ opacity: 0, y: 5 }}
-                                                className="absolute top-full right-0 mt-3 w-80 bg-white rounded-3xl shadow-2xl border border-[#EEEEEF] p-6 z-[50]"
-                                            >
-                                                <div className="space-y-6">
-                                                    <div>
-                                                        <label className="text-[9px] font-bold text-[#2D384A]/40 uppercase tracking-widest mb-3 block">File Architecture</label>
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            <button
-                                                                onClick={() => setExportFormat('csv')}
-                                                                className={clsx(
-                                                                    "px-3 py-3 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-2",
-                                                                    exportFormat === 'csv'
-                                                                        ? "bg-[#2D384A] text-white border-[#2D384A]"
-                                                                        : "bg-white text-[#2D384A]/60 border-[#EEEEEF] hover:border-[#2D384A]/20"
-                                                                )}
-                                                            >
-                                                                <FileText className="w-3.5 h-3.5" /> CSV
-                                                            </button>
-                                                            <button
-                                                                onClick={() => setExportFormat('xlsx')}
-                                                                className={clsx(
-                                                                    "px-3 py-3 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-2",
-                                                                    exportFormat === 'xlsx'
-                                                                        ? "bg-[#A8328D] text-white border-[#A8328D]"
-                                                                        : "bg-white text-[#2D384A]/60 border-[#EEEEEF] hover:border-[#2D384A]/20"
-                                                                )}
-                                                            >
-                                                                <FileSpreadsheet className="w-3.5 h-3.5" /> EXCEL
-                                                            </button>
-                                                        </div>
-                                                    </div>
-
-                                                    <div>
-                                                        <div className="flex justify-between items-center mb-3">
-                                                            <label className="text-[9px] font-bold text-[#2D384A]/40 uppercase tracking-widest">Fields</label>
-                                                            <button
-                                                                onClick={() => setSelectedColumns(selectedColumns.size === availableColumns.length ? new Set() : new Set(availableColumns))}
-                                                                className="text-[9px] font-bold text-[#A8328D] hover:underline uppercase"
-                                                            >
-                                                                {selectedColumns.size === availableColumns.length ? 'Clear' : 'Select All'}
-                                                            </button>
-                                                        </div>
-                                                        <div className="max-h-40 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
-                                                            {availableColumns.map(col => (
-                                                                <label key={col} className="flex items-center gap-3 p-2 hover:bg-[#EEEEEF]/50 rounded-xl cursor-pointer group transition-colors">
-                                                                    <div className={clsx(
-                                                                        "w-4 h-4 rounded-md border flex items-center justify-center transition-all",
-                                                                        selectedColumns.has(col) ? "bg-[#2D384A] border-[#2D384A]" : "border-[#EEEEEF] bg-white group-hover:border-[#2D384A]/30"
-                                                                    )}>
-                                                                        {selectedColumns.has(col) && <CheckIcon className="w-2.5 h-2.5 text-white" />}
-                                                                    </div>
-                                                                    <input type="checkbox" className="hidden" checked={selectedColumns.has(col)} onChange={() => toggleColumn(col)} />
-                                                                    <span className="text-xs font-bold text-[#2D384A]/70 truncate uppercase tracking-tight">{col.replace(/_/g, ' ')}</span>
-                                                                </label>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-
-                                                    <button
-                                                        onClick={handleExportClick}
-                                                        disabled={isExporting || selectedColumns.size === 0}
-                                                        className="w-full py-4 bg-[#2D384A] hover:bg-[#A8328D] disabled:opacity-20 text-white rounded-xl text-[10px] font-bold uppercase tracking-[0.2em] transition-all shadow-xl shadow-[#2D384A]/10"
-                                                    >
-                                                        {isExporting ? 'Transmitting...' : 'Execute Export'}
-                                                    </button>
-                                                </div>
-                                            </motion.div>
+                                            <ExportMenu
+                                                isOpen={isExportMenuOpen}
+                                                onClose={() => setIsExportMenuOpen(false)}
+                                                availableColumns={availableColumns}
+                                                onExport={onExport}
+                                            />
                                         )}
                                     </AnimatePresence>
                                 </div>

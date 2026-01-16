@@ -1,229 +1,274 @@
-import { useState } from 'react';
+import { FC } from 'react';
+import { X, GitMerge, Check, AlertCircle, ArrowRight, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-    X,
-    ArrowRight,
-    CheckCircle2,
-    Layers,
-    AlertCircle,
-    Database,
-    Settings2,
-    ChevronLeft
-} from 'lucide-react';
 import clsx from 'clsx';
-import { useMergeAnalysis, useExecuteMerge } from '../hooks';
+import { useBuckets } from '../hooks';
+import { useConsolidationWizard } from '../hooks/useConsolidationWizard';
 
 interface ConsolidationWizardProps {
-    sourceBucket: any;
-    targetBucket: any;
     onClose: () => void;
-    onComplete: (newBucketId: string) => void;
+    onCompleted: (newBucketId: string) => void;
 }
 
-const ConsolidationWizard = ({ sourceBucket, targetBucket, onClose, onComplete }: ConsolidationWizardProps) => {
-    const [step, setStep] = useState(1);
-    const [mergeName, setMergeName] = useState(`Combined: ${sourceBucket.name} & ${targetBucket.name}`);
+const StatsCard = ({ label, value, subValue, icon: Icon, color }: any) => (
+    <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
+        <div className={clsx("w-10 h-10 rounded-xl flex items-center justify-center", color)}>
+            <Icon size={20} />
+        </div>
+        <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{label}</p>
+            <div className="flex items-baseline gap-1">
+                <span className="text-lg font-bold text-[#2D384A]">{value}</span>
+                {subValue && <span className="text-[10px] text-slate-400">{subValue}</span>}
+            </div>
+        </div>
+    </div>
+);
 
-    const { data: analysis, isLoading: analyzing } = useMergeAnalysis(
-        sourceBucket._id,
-        targetBucket._id,
-        step >= 2
+const ResolutionOption = ({ id, title, desc, active, onClick }: any) => (
+    <div
+        onClick={onClick}
+        className={clsx(
+            "p-5 rounded-2xl border-2 transition-all cursor-pointer group",
+            active ? "border-[#A8328D] bg-[#A8328D]/5" : "border-slate-100 bg-white hover:border-slate-200"
+        )}
+    >
+        <div className="flex justify-between items-start mb-2">
+            <h4 className={clsx("font-bold text-sm", active ? "text-[#A8328D]" : "text-[#2D384A]")}>{title}</h4>
+            <div className={clsx(
+                "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
+                active ? "border-[#A8328D] bg-[#A8328D]" : "border-slate-200"
+            )}>
+                {active && <Check size={12} className="text-white" />}
+            </div>
+        </div>
+        <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+    </div>
+);
+
+const Step1Selection = ({ sourceId, setSourceId, targetId, setTargetId, buckets }: any) => (
+    <div className="space-y-8 py-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 relative">
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-10 bg-white border border-slate-100 rounded-full z-10 hidden md:flex items-center justify-center text-slate-400">
+                <ArrowRight size={20} />
+            </div>
+
+            <div className="space-y-3">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Source Registry</label>
+                <select
+                    value={sourceId}
+                    onChange={(e) => setSourceId(e.target.value)}
+                    className="w-full h-14 px-5 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-[#A8328D]/20 outline-none transition-all"
+                >
+                    <option value="">Select source...</option>
+                    {buckets?.map((b: any) => (
+                        <option key={b._id} value={b._id}>{b.name} ({b.recordCount} rcs)</option>
+                    ))}
+                </select>
+                <p className="text-[10px] text-slate-400">This data will be merged into the target.</p>
+            </div>
+
+            <div className="space-y-3">
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Target Registry</label>
+                <select
+                    value={targetId}
+                    onChange={(e) => setTargetId(e.target.value)}
+                    className="w-full h-14 px-5 bg-slate-50 border border-slate-100 rounded-2xl text-sm font-bold focus:ring-2 focus:ring-[#A8328D]/20 outline-none transition-all"
+                >
+                    <option value="">Select target...</option>
+                    {buckets?.map((b: any) => (
+                        <option key={b._id} value={b._id}>{b.name} ({b.recordCount} rcs)</option>
+                    ))}
+                </select>
+                <p className="text-[10px] text-slate-400">This registry will host the combined records.</p>
+            </div>
+        </div>
+    </div>
+);
+
+const Step2Analysis = ({ analysis, analyzing, error }: any) => {
+    if (analyzing) return (
+        <div className="py-20 flex flex-col items-center justify-center space-y-4">
+            <div className="w-12 h-12 border-4 border-slate-100 border-t-[#A8328D] rounded-full animate-spin" />
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Scanning for Conflicts...</p>
+        </div>
     );
 
-    const mergeMutation = useExecuteMerge(onComplete);
-
-    const handleExecuteMerge = () => {
-        mergeMutation.mutate({
-            sourceId: sourceBucket._id,
-            targetId: targetBucket._id,
-            mergeName,
-            conflictResolution: 'fuse'
-        });
-    };
+    if (error) return (
+        <div className="py-20 flex flex-col items-center justify-center text-center space-y-4">
+            <div className="w-16 h-16 bg-red-50 text-red-500 rounded-full flex items-center justify-center">
+                <AlertCircle size={32} />
+            </div>
+            <div>
+                <h4 className="font-bold text-[#2D384A]">Analysis Failed</h4>
+                <p className="text-xs text-slate-400 mt-1">We couldn't analyze these registries. They might have incompatible schemas.</p>
+            </div>
+        </div>
+    );
 
     return (
-        <div className="fixed inset-0 z-[300] bg-[#2D384A]/60 backdrop-blur-md flex items-center justify-center p-6">
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <StatsCard
+                    label="Combined Records"
+                    value={analysis?.totalExpected}
+                    icon={GitMerge}
+                    color="bg-indigo-50 text-indigo-600"
+                />
+                <StatsCard
+                    label="Potential Matches"
+                    value={analysis?.conflicts}
+                    subValue="identities"
+                    icon={Check}
+                    color="bg-emerald-50 text-emerald-600"
+                />
+                <StatsCard
+                    label="Schema Match"
+                    value={`${analysis?.schemaMatch}%`}
+                    icon={AlertCircle}
+                    color="bg-amber-50 text-amber-600"
+                />
+            </div>
+
+            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
+                <h4 className="text-xs font-bold text-[#2D384A] uppercase tracking-widest mb-4">Consolidation Summary</h4>
+                <ul className="space-y-3">
+                    <li className="flex items-start gap-3 text-xs text-slate-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#A8328D] mt-1.5 shrink-0" />
+                        <span>Source registry data will be deduplicated against the target based on shared identity fields.</span>
+                    </li>
+                    <li className="flex items-start gap-3 text-xs text-slate-600">
+                        <div className="w-1.5 h-1.5 rounded-full bg-[#A8328D] mt-1.5 shrink-0" />
+                        <span>Fields present in the source but missing in the target will be appended to the target schema.</span>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    );
+};
+
+const Step3Resolution = ({ strategy, setStrategy }: any) => (
+    <div className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <ResolutionOption
+                title="Favor Target"
+                desc="If duplicate records are found, data in the target registry will take precedence. Missing fields from source will still be added."
+                active={strategy === 'keep_target'}
+                onClick={() => setStrategy('keep_target')}
+            />
+            <ResolutionOption
+                title="Favor Source"
+                desc="Data from the incoming source registry will overwrite existing records in the target if identity matches are found."
+                active={strategy === 'keep_source'}
+                onClick={() => setStrategy('keep_source')}
+            />
+        </div>
+
+        <div className="flex items-center gap-3 p-4 bg-blue-50 text-blue-700 rounded-xl">
+            <AlertCircle size={18} />
+            <p className="text-[10px] font-medium italic">Safety Note: A backup of the target registry will be created automatically before this operation.</p>
+        </div>
+    </div>
+);
+
+const ConsolidationWizard: FC<ConsolidationWizardProps> = (props) => {
+    const { data: buckets } = useBuckets();
+    const {
+        step,
+        sourceId,
+        setSourceId,
+        targetId,
+        setTargetId,
+        strategy,
+        setStrategy,
+        analysis,
+        analyzing,
+        analysisError,
+        isExecuting,
+        handleNext,
+        handleBack,
+        handleExecute,
+        onClose
+    } = useConsolidationWizard(props);
+
+    return (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 bg-[#2D384A]/60 backdrop-blur-md">
             <motion.div
-                initial={{ opacity: 0, scale: 0.98, y: 10 }}
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
-                className="bg-[#EEEEEF] w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] border border-white/20"
+                className="bg-white w-full max-w-3xl rounded-[40px] shadow-2xl overflow-hidden flex flex-col"
             >
                 {/* Header */}
-                <div className="px-8 py-6 bg-white border-b border-[#2D384A]/5 flex items-center justify-between">
+                <div className="px-10 pt-10 pb-6 flex justify-between items-start">
                     <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 bg-[#A8328D]/10 rounded-xl flex items-center justify-center">
-                            <Layers className="w-5 h-5 text-[#A8328D]" />
+                        <div className="w-12 h-12 bg-[#A8328D]/10 text-[#A8328D] rounded-2xl flex items-center justify-center">
+                            <GitMerge size={24} />
                         </div>
                         <div>
-                            <h2 className="text-xl font-bold text-[#2D384A] tracking-tight">Merge Protocol</h2>
-                            <p className="text-[10px] font-bold text-[#2D384A]/40 uppercase tracking-[0.15em]">System Consolidation v2.4</p>
+                            <h2 className="text-xl font-bold text-[#2D384A]">Consolidation Wizard</h2>
+                            <p className="text-xs text-slate-400 mt-0.5">Step {step}: {step === 1 ? 'Selection' : step === 2 ? 'Analysis' : 'Resolution'}</p>
                         </div>
                     </div>
-                    <button
-                        onClick={onClose}
-                        className="p-2 hover:bg-[#2D384A]/5 rounded-lg text-[#2D384A]/40 hover:text-red-500 transition-all"
-                    >
-                        <X className="w-5 h-5" />
-                    </button>
+                    <button onClick={onClose} className="p-3 hover:bg-slate-50 rounded-2xl transition-colors"><X size={24} className="text-slate-300" /></button>
                 </div>
 
-                {/* Stepper Progress */}
-                <div className="flex w-full h-1.5 bg-[#2D384A]/5">
-                    {[1, 2, 3, 4].map((i) => (
-                        <div
-                            key={i}
-                            className={clsx(
-                                "flex-1 transition-all duration-500",
-                                step >= i ? "bg-[#A8328D]" : "bg-transparent"
-                            )}
-                        />
-                    ))}
-                </div>
-
-                {/* Main Content Area */}
-                <div className="flex-1 overflow-y-auto p-8 custom-scrollbar bg-white/50">
+                {/* Content */}
+                <div className="px-10 py-6 flex-1 overflow-y-auto min-h-[400px]">
                     <AnimatePresence mode="wait">
-                        {step === 1 && (
-                            <motion.div
-                                key="step1"
-                                initial={{ opacity: 0, x: 10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -10 }}
-                                className="space-y-6"
-                            >
-                                <div className="p-6 bg-white rounded-2xl border border-[#2D384A]/5 shadow-sm">
-                                    <h3 className="text-sm font-bold text-[#2D384A] mb-4 flex items-center gap-2">
-                                        <Settings2 className="w-4 h-4 text-[#A8328D]" />
-                                        Identity Attribution
-                                    </h3>
-                                    <p className="text-xs text-[#2D384A]/60 font-medium mb-6 leading-relaxed">
-                                        You are merging <span className="text-[#2D384A] font-bold">{sourceBucket.name}</span> into <span className="text-[#2D384A] font-bold">{targetBucket.name}</span>.
-                                        Please define the name for the resulting unified node.
-                                    </p>
-
-                                    <div className="space-y-2">
-                                        <label className="text-[9px] font-bold text-[#2D384A]/40 uppercase tracking-widest ml-1">New Node Name</label>
-                                        <input
-                                            value={mergeName}
-                                            onChange={e => setMergeName(e.target.value)}
-                                            className="w-full px-5 py-4 bg-[#EEEEEF]/50 border border-[#2D384A]/10 rounded-xl text-md font-bold text-[#2D384A] focus:ring-2 focus:ring-[#A8328D]/20 transition-all outline-none"
-                                            placeholder="Unified Node Name..."
-                                        />
-                                    </div>
-                                </div>
-                            </motion.div>
-                        )}
-
-                        {step === 2 && (
-                            <motion.div
-                                key="step2"
-                                initial={{ opacity: 0, x: 10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -10 }}
-                                className="space-y-6"
-                            >
-                                <h3 className="text-sm font-bold text-[#2D384A] flex items-center gap-2">
-                                    <Database className="w-4 h-4 text-[#A8328D]" />
-                                    Deep Scan Analysis
-                                </h3>
-
-                                {analyzing ? (
-                                    <div className="py-16 flex flex-col items-center justify-center space-y-4 bg-white rounded-2xl border border-[#2D384A]/5">
-                                        <div className="w-8 h-8 border-3 border-[#A8328D]/10 border-t-[#A8328D] rounded-full animate-spin" />
-                                        <p className="text-[10px] font-bold text-[#2D384A]/40 uppercase tracking-widest animate-pulse">Analyzing Schemas...</p>
-                                    </div>
-                                ) : (
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <StatsCard label="Identical" value={analysis?.identical} icon={<CheckCircle2 className="w-5 h-5 text-emerald-500" />} />
-                                        <StatsCard label="Conflicts" value={analysis?.conflicts} icon={<AlertCircle className="w-5 h-5 text-amber-500" />} type="warning" />
-                                        <StatsCard label="Source Only" value={analysis?.uniqueA} />
-                                        <StatsCard label="Target Only" value={analysis?.uniqueB} />
-                                    </div>
-                                )}
-                            </motion.div>
-                        )}
-
-                        {step === 3 && (
-                            <motion.div
-                                key="step3"
-                                initial={{ opacity: 0, x: 10 }}
-                                animate={{ opacity: 1, x: 0 }}
-                                exit={{ opacity: 0, x: -10 }}
-                                className="space-y-6"
-                            >
-                                <div className="p-6 bg-white rounded-2xl border border-[#2D384A]/5 shadow-sm">
-                                    <h3 className="text-sm font-bold text-[#2D384A] mb-4 flex items-center gap-2">
-                                        <AlertCircle className="w-4 h-4 text-amber-500" />
-                                        Conflict Resolution Lab
-                                    </h3>
-                                    <p className="text-xs text-[#2D384A]/60 font-medium mb-6">
-                                        Found <span className="font-bold text-[#2D384A]">{analysis?.conflicts}</span> intersections. Select your merge strategy:
-                                    </p>
-
-                                    <div className="space-y-3">
-                                        <ResolutionOption
-                                            active
-                                            title="Smart Fusion"
-                                            desc="Intelligently combine field-level data to create the most complete record."
-                                        />
-                                        <ResolutionOption
-                                            title="Preserve Disparity"
-                                            desc="Treat similar records as unique entries to avoid any data loss."
-                                        />
-                                    </div>
-                                </div>
-                            </motion.div>
-                        )}
-
-                        {step === 4 && (
-                            <motion.div
-                                key="step4"
-                                initial={{ opacity: 0, scale: 0.98 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className="text-center py-8"
-                            >
-                                <div className="w-20 h-20 bg-[#A8328D]/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
-                                    <CheckCircle2 className="w-10 h-10 text-[#A8328D]" />
-                                </div>
-                                <h3 className="text-xl font-bold text-[#2D384A] mb-2">Ready to Fusing Nodes</h3>
-                                <p className="text-xs text-[#2D384A]/60 max-w-xs mx-auto font-medium leading-relaxed">
-                                    All parameters are set. Source data will be archived into the new lineage for future restoration capability.
-                                </p>
-                            </motion.div>
-                        )}
+                        <motion.div
+                            key={step}
+                            initial={{ opacity: 0, x: 10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -10 }}
+                            transition={{ duration: 0.2 }}
+                        >
+                            {step === 1 && (
+                                <Step1Selection
+                                    sourceId={sourceId} setSourceId={setSourceId}
+                                    targetId={targetId} setTargetId={setTargetId}
+                                    buckets={buckets}
+                                />
+                            )}
+                            {step === 2 && (
+                                <Step2Analysis analysis={analysis} analyzing={analyzing} error={analysisError} />
+                            )}
+                            {step === 3 && (
+                                <Step3Resolution strategy={strategy} setStrategy={setStrategy} />
+                            )}
+                        </motion.div>
                     </AnimatePresence>
                 </div>
 
-                {/* Footer Controls */}
-                <div className="px-8 py-6 bg-white border-t border-[#2D384A]/5 flex items-center justify-between">
+                {/* Footer */}
+                <div className="px-10 py-8 bg-slate-50 flex justify-between items-center">
                     <button
-                        onClick={() => step > 1 ? setStep(s => s - 1) : onClose()}
-                        className="flex items-center gap-2 px-4 py-2 text-[10px] font-bold text-[#2D384A]/40 hover:text-[#2D384A] transition-all uppercase tracking-widest"
+                        onClick={handleBack}
+                        disabled={step === 1}
+                        className="px-6 py-3 text-xs font-bold text-slate-400 hover:text-slate-600 flex items-center gap-2 disabled:opacity-0"
                     >
-                        {step > 1 && <ChevronLeft className="w-3 h-3" />}
-                        {step === 1 ? 'Cancel Protocol' : 'Previous Step'}
+                        <ArrowLeft size={16} /> Back
                     </button>
 
-                    <button
-                        onClick={() => {
-                            if (step < 4) setStep(s => s + 1);
-                            else handleExecuteMerge();
-                        }}
-                        disabled={mergeMutation.isPending}
-                        className="px-8 py-3 bg-[#2D384A] text-white rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-[#A8328D] transition-all flex items-center gap-3 shadow-lg shadow-[#2D384A]/10 disabled:opacity-50"
-                    >
-                        {mergeMutation.isPending ? 'Executing...' : step === 4 ? 'Confirm & Execute' : 'Next Phase'}
-                        <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
+                    {step < 3 ? (
+                        <button
+                            onClick={handleNext}
+                            className="px-8 py-3.5 bg-[#2D384A] text-white rounded-2xl text-xs font-bold flex items-center gap-3 hover:bg-[#A8328D] transition-all"
+                        >
+                            Continue <ArrowRight size={16} />
+                        </button>
+                    ) : (
+                        <button
+                            onClick={handleExecute}
+                            disabled={isExecuting}
+                            className="px-8 py-3.5 bg-[#A8328D] text-white rounded-2xl text-xs font-bold flex items-center gap-3 hover:bg-[#8e2a77] transition-all shadow-lg shadow-[#A8328D]/30"
+                        >
+                            {isExecuting ? 'Processing...' : 'Merge Registries'} <GitMerge size={16} />
+                        </button>
+                    )}
                 </div>
             </motion.div>
         </div>
     );
 };
-
-import {
-    StatsCard,
-    ResolutionOption
-} from './dashboard/merge';
 
 export default ConsolidationWizard;

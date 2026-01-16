@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { FileText, Hash, Database, Search, Loader2, Eye } from 'lucide-react';
 import clsx from 'clsx';
 import { Message, Job } from '../../types';
@@ -10,8 +11,13 @@ interface MessageItemProps {
 }
 
 export const MessageItem = ({ msg, allJobs, onReviewJob, onViewData }: MessageItemProps) => {
+    const embeddedJob = useMemo(() => {
+        if (!msg.jobId || !allJobs) return null;
+        return allJobs.find(j => j._id === msg.jobId);
+    }, [msg.jobId, allJobs]);
+
     return (
-        <div key={msg.id} className={clsx("flex flex-col gap-2", msg.type === 'user' ? "items-end" : "items-start")}>
+        <div className={clsx("flex flex-col gap-2", msg.type === 'user' ? "items-end" : "items-start")}>
             <div className={clsx(
                 "max-w-[90%] p-4 text-sm font-medium shadow-sm transition-all animate-in zoom-in-95 duration-200",
                 msg.type === 'user'
@@ -27,44 +33,7 @@ export const MessageItem = ({ msg, allJobs, onReviewJob, onViewData }: MessageIt
                         <span className="text-xs font-bold truncate max-w-[200px]">{msg.file.name}</span>
                     </div>
                 )}
-                {msg.queryResult && (
-                    <div className="mt-3">
-                        {/* Adaptive UI: Scenario A - Stat Card */}
-                        {msg.queryResult.summary && (
-                            <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-5 mb-3 flex items-center gap-4 w-fit shadow-sm">
-                                <div className="w-12 h-12 bg-white rounded-full flex items-center justify-center shadow-md text-indigo-600">
-                                    <Hash className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{msg.queryResult.summary.label}</p>
-                                    <p className="text-3xl font-black text-indigo-900">{msg.queryResult.summary.value.toLocaleString()}</p>
-                                </div>
-                            </div>
-                        )}
 
-                        {/* Adaptive UI: Scenario C - Summary + Action (Large sets) */}
-                        {!msg.queryResult.summary && msg.queryResult.pagination && msg.queryResult.pagination.total > 5 && (
-                            <div className="bg-white border border-slate-100 rounded-[24px] p-5 shadow-lg mb-4 w-full max-w-[340px] flex flex-col gap-4 border-l-4 border-l-indigo-500">
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-indigo-50 rounded-2xl text-indigo-600 shadow-sm">
-                                        <Database className="w-6 h-6" />
-                                    </div>
-                                    <div>
-                                        <p className="font-black text-slate-900 text-base">{msg.queryResult.pagination.total.toLocaleString()} Records</p>
-                                        <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Full Dataset Available</p>
-                                    </div>
-                                </div>
-                                <button
-                                    onClick={() => onViewData(msg.queryResult!.data, msg.queryResult!.pagination, msg.queryResult!.prompt)}
-                                    className="w-full py-3 bg-[#2D384A] text-white rounded-xl text-xs font-black hover:bg-black transition-all flex items-center justify-center gap-2 shadow-xl shadow-slate-900/10 hover:scale-[1.02] active:scale-[0.98]"
-                                >
-                                    <Search className="w-4 h-4" />
-                                    VIEW & EXPLORE DATA
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                )}
                 {msg.isLoading ? (
                     <div className="flex items-center gap-3 py-1">
                         <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
@@ -177,49 +146,42 @@ export const MessageItem = ({ msg, allJobs, onReviewJob, onViewData }: MessageIt
                                 )}
                             </div>
                         )}
-                        {typeof msg.content === 'string' ? msg.content : msg.content}
+                        {msg.content}
                     </>
                 )}
             </div>
 
             {/* Embedded Job Card */}
-            {msg.jobId && allJobs && (
-                (() => {
-                    const job = allJobs.find(j => j._id === msg.jobId);
-                    if (!job) return null;
+            {embeddedJob && (
+                <div className="ml-1 mt-2 bg-[#F8F9FA] rounded-[24px] p-5 border border-slate-100 flex flex-col gap-3 w-[280px] shadow-sm animate-in slide-up">
+                    <div className="flex justify-between items-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[120px]">{embeddedJob.originalName}</span>
+                        <span className={clsx(
+                            "text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wide",
+                            embeddedJob.status === 'completed' ? "bg-emerald-100 text-emerald-700" :
+                                embeddedJob.status === 'waiting_approval' ? "bg-[#A8328D]/10 text-[#A8328D]" :
+                                    embeddedJob.status === 'failed' ? "bg-red-100 text-red-700" :
+                                        "bg-blue-100 text-blue-700"
+                        )}>
+                            {embeddedJob.status.replace('_', ' ')}
+                        </span>
+                    </div>
 
-                    return (
-                        <div className="ml-1 mt-2 bg-[#F8F9FA] rounded-[24px] p-5 border border-slate-100 flex flex-col gap-3 w-[280px] shadow-sm animate-in slide-up">
-                            <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[120px]">{job.originalName}</span>
-                                <span className={clsx(
-                                    "text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wide",
-                                    job.status === 'completed' ? "bg-emerald-100 text-emerald-700" :
-                                        job.status === 'waiting_approval' ? "bg-[#A8328D]/10 text-[#A8328D]" :
-                                            job.status === 'failed' ? "bg-red-100 text-red-700" :
-                                                "bg-blue-100 text-blue-700"
-                                )}>
-                                    {job.status.replace('_', ' ')}
-                                </span>
+                    {embeddedJob.status === 'waiting_approval' && (
+                        <div className="flex items-center justify-between mt-1">
+                            <div className="flex flex-col">
+                                <span className="text-xs font-bold text-[#2D384A]">Ready</span>
+                                <span className="text-[10px] text-slate-400">Review Data</span>
                             </div>
-
-                            {job.status === 'waiting_approval' && (
-                                <div className="flex items-center justify-between mt-1">
-                                    <div className="flex flex-col">
-                                        <span className="text-xs font-bold text-[#2D384A]">Ready</span>
-                                        <span className="text-[10px] text-slate-400">Review Data</span>
-                                    </div>
-                                    <button
-                                        onClick={() => onReviewJob(job)}
-                                        className="px-4 py-2 bg-[#2D384A] text-white text-xs font-bold rounded-xl hover:bg-[#1a202c] transition-colors flex items-center gap-2 shadow-lg shadow-[#2D384A]/10"
-                                    >
-                                        <Eye size={14} /> Review
-                                    </button>
-                                </div>
-                            )}
+                            <button
+                                onClick={() => onReviewJob(embeddedJob)}
+                                className="px-4 py-2 bg-[#2D384A] text-white text-xs font-bold rounded-xl hover:bg-[#1a202c] transition-colors flex items-center gap-2 shadow-lg shadow-[#2D384A]/10"
+                            >
+                                <Eye size={14} /> Review
+                            </button>
                         </div>
-                    );
-                })()
+                    )}
+                </div>
             )}
         </div>
     );

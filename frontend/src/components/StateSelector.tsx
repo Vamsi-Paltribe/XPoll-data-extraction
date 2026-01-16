@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Check, ChevronsUpDown, Search, X } from "lucide-react"
+import { useState, useEffect, useRef, FC } from 'react';
+import { Check, ChevronsUpDown, Search, X } from "lucide-react";
 
 const US_STATES = [
     "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia",
@@ -15,7 +15,7 @@ interface StateSelectorProps {
     className?: string; // Allow custom styling
 }
 
-const StateSelector: React.FC<StateSelectorProps> = ({ value, onChange, className }) => {
+const StateSelector: FC<StateSelectorProps> = ({ value, onChange, className }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [search, setSearch] = useState("");
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -26,24 +26,23 @@ const StateSelector: React.FC<StateSelectorProps> = ({ value, onChange, classNam
         state.toLowerCase().includes(search.toLowerCase())
     );
 
-    // Close on click outside
+    // Dropdown visibility & focus management
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
             }
         };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
 
-    // Focus input when opened
-    useEffect(() => {
-        if (isOpen && inputRef.current) {
-            inputRef.current.focus();
+        if (isOpen) {
+            document.addEventListener('mousedown', handleClickOutside);
+            inputRef.current?.focus();
         } else {
             setSearch(""); // Reset search on close
+            document.removeEventListener('mousedown', handleClickOutside);
         }
+
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isOpen]);
 
     return (

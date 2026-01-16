@@ -1,15 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import { FC } from 'react';
 import {
     LayoutTemplate,
     ChevronLeft, ChevronRight,
     Loader2, Check, X
 } from 'lucide-react';
 import StateSelector from './StateSelector';
-import { useJobRecords } from '../hooks';
 import {
     MappingSummary,
     ExtractionTable
 } from './review';
+import { useReviewExtraction } from '../hooks/useReviewExtraction';
 
 interface ReviewExtractionModalProps {
     job: any;
@@ -19,54 +19,25 @@ interface ReviewExtractionModalProps {
     isProcessing: boolean;
 }
 
-const ReviewExtractionModal: React.FC<ReviewExtractionModalProps> = ({
+const ReviewExtractionModal: FC<ReviewExtractionModalProps> = ({
     job,
     onClose,
     onApprove,
     onReject,
     isProcessing
 }) => {
-    const [page, setPage] = useState(1);
-    const [manualState, setManualState] = useState('');
-    const limit = 15;
-
-    const { data, isLoading } = useJobRecords(job._id, page, limit);
-
-    const records = data?.records || [];
-    const pagination = data?.pagination || { total: 0, pages: 1 };
-
-    // Close on ESC
-    useEffect(() => {
-        const handleEsc = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') onClose();
-        };
-        window.addEventListener('keydown', handleEsc);
-        return () => window.removeEventListener('keydown', handleEsc);
-    }, [onClose]);
-
+    const {
+        page,
+        setPage,
+        manualState,
+        setManualState,
+        records,
+        pagination,
+        isLoading
+    } = useReviewExtraction({ jobId: job._id, onClose });
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-            <style>
-                {`
-                    .custom-scrollbar::-webkit-scrollbar {
-                        height: 8px;
-                        width: 8px;
-                    }
-                    .custom-scrollbar::-webkit-scrollbar-track {
-                        background: #f8fafc;
-                        border-radius: 10px;
-                    }
-                    .custom-scrollbar::-webkit-scrollbar-thumb {
-                        background: #cbd5e1;
-                        border-radius: 10px;
-                        border: 2px solid #f8fafc;
-                    }
-                    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-                        background: #94a3b8;
-                    }
-                `}
-            </style>
             <div
                 className="bg-white w-full max-w-6xl h-[85vh] rounded-[32px] shadow-2xl overflow-hidden flex flex-col ring-1 ring-black/5 animate-in zoom-in-95 duration-300"
                 onClick={(e) => e.stopPropagation()}
