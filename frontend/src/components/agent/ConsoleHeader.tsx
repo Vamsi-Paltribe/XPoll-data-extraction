@@ -1,5 +1,5 @@
 import { Bot } from 'lucide-react';
-import { cn } from '../../utils';
+import { cn } from '@/utils';
 
 interface ConsoleHeaderProps {
     showHistory: boolean;

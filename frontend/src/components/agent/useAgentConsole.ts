@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { Job, Message } from '../../types';
-import { useAgent, useJobs } from '../../hooks';
+import { Job, Message } from '@/types';
+import { useAgent, useJobs } from '@/hooks';
 
 interface UseAgentConsoleProps {
     bucketId?: string;

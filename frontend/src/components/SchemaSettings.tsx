@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Hash, Trash2 } from 'lucide-react';
-import { Registry, RegistryParameter } from '../types';
-import { useUpdateBucketSettings } from '../hooks';
+import { Registry, RegistryParameter } from '@/types';
+import { useUpdateBucketSettings } from '@/hooks';
 
 interface SchemaSettingsProps {
     registry: Registry;

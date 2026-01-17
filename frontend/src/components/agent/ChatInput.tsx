@@ -1,6 +1,6 @@
 import React from 'react';
 import { Paperclip, ArrowUp, Loader2 } from 'lucide-react';
-import { cn } from '../../utils';
+import { cn } from '@/utils';
 
 interface ChatInputProps {
     input: string;

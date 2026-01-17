@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import api from '../services/api';
-import BannerImage from '../assets/xpoll.png';
+import api from '@/services/api';
+import BannerImage from '@/assets/xpoll.png';
 
 const Login = () => {
     const navigate = useNavigate();

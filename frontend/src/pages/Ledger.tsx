@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import api from '../services/api';
+import api from '@/services/api';
 import {
     ArrowUpRight,
     ArrowDownLeft,
@@ -8,7 +8,7 @@ import {
     Activity,
     Search
 } from 'lucide-react';
-import { cn } from '../utils';
+import { cn } from '@/utils';
 
 interface LedgerEntry {
     _id: string;

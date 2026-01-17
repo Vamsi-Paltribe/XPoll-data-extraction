@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Job } from '../../types';
-import { useBucket, useRegistryRecords, useJobs, useSyncRegistry } from '../../hooks';
+import { Job } from '@/types';
+import { useBucket, useRegistryRecords, useJobs, useSyncRegistry } from '@/hooks';
 
 export const useRegistryView = (id: string | undefined) => {
     // State

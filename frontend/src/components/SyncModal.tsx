@@ -1,11 +1,11 @@
 import { useState, useEffect, ChangeEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import { cn } from '../utils';
+import { cn } from '@/utils';
 import {
     X, Globe, Search, Database, Layers, Check,
     ChevronRight, Zap, MapPin, Filter
 } from 'lucide-react';
-import { useDirectory, useBucketHeaders } from '../hooks';
+import { useDirectory, useBucketHeaders } from '@/hooks';
 
 interface SyncModalProps {
     isOpen: boolean;

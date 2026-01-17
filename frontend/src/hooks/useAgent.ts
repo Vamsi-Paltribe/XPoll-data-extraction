@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
-import endpoints from '../constants/endpoints';
+import api from '@/services/api';
+import endpoints from '@/constants/endpoints';
 
 export const useAgent = (bucketId: string | undefined) => {
     const queryClient = useQueryClient();

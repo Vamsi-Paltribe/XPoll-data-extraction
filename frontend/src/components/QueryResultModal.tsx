@@ -1,9 +1,9 @@
 import { FC, useEffect, useMemo, useState } from 'react';
 import { X, Database, Check as CheckIcon, Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { cn } from '../utils';
+import { cn } from '@/utils';
 import DataGrid from './DataGrid';
-import { PaginatedResponse } from '../types';
+import { PaginatedResponse } from '@/types';
 
 interface QueryResultModalProps {
     isOpen: boolean;

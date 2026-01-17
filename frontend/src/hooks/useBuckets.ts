@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
-import endpoints from '../constants/endpoints';
-import { Bucket, Registry, RegistryParameter } from '../types';
+import api from '@/services/api';
+import endpoints from '@/constants/endpoints';
+import { Bucket, Registry, RegistryParameter } from '@/types';
 
 export const useBuckets = () => {
     const queryClient = useQueryClient();

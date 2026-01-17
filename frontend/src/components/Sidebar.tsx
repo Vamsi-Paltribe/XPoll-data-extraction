@@ -1,6 +1,6 @@
 import { LogOut, Wallet, LayoutGrid } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { cn } from '../utils';
+import { cn } from '@/utils';
 
 const Sidebar = () => {
     const location = useLocation();

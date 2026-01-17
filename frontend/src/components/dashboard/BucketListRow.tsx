@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Database, Clock, Layers, RotateCcw, ArrowUpRight } from 'lucide-react';
-import { cn } from '../../utils';
+import { cn } from '@/utils';
 
 interface BucketListRowProps {
     bucket: any;

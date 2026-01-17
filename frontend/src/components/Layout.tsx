@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { cn } from '../utils';
+import { cn } from '@/utils';
 import {
     LogOut,
     Database,
@@ -8,7 +8,7 @@ import {
     Wallet,
     Coins
 } from 'lucide-react';
-import { useAuth } from '../hooks';
+import { useAuth } from '@/hooks';
 
 interface LayoutProps {
     children: ReactNode;

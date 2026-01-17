@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, FC } from 'react';
 import { Check, ChevronsUpDown, Search, X } from "lucide-react";
-import { cn } from '../utils';
+import { cn } from '@/utils';
 
 const US_STATES = [
     "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia",

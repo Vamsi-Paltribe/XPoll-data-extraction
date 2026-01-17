@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
-import endpoints from '../constants/endpoints';
-import { Record, PaginatedResponse } from '../types';
+import api from '@/services/api';
+import endpoints from '@/constants/endpoints';
+import { Record, PaginatedResponse } from '@/types';
 
 export const useRegistryRecords = (id: string | undefined, page: number, limit: number = 20) => {
     const fetchRecords = async () => {

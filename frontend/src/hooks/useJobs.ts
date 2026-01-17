@@ -1,7 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
-import endpoints from '../constants/endpoints';
-import { Job } from '../types';
+import api from '@/services/api';
+import endpoints from '@/constants/endpoints';
+import { Job } from '@/types';
 
 export const useJobs = (bucketId: string | undefined) => {
     const queryClient = useQueryClient();

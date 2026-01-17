@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Record } from '../types';
+import { Record } from '@/types';
 
 interface UseDataGridProps {
     records: Record[];

@@ -9,7 +9,7 @@ import {
     MappingSummary,
     ExtractionTable
 } from './review';
-import { useReviewExtraction } from '../hooks/useReviewExtraction';
+import { useReviewExtraction } from '@/hooks/useReviewExtraction';
 
 interface ReviewExtractionModalProps {
     job: any;

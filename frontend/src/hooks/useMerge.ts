@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import api from '../services/api';
-import endpoints from '../constants/endpoints';
+import api from '@/services/api';
+import endpoints from '@/constants/endpoints';
 
 export const useMergeAnalysis = (sourceId: string, targetId: string, enabled: boolean) => {
     return useQuery({

@@ -1,6 +1,6 @@
 import React from 'react';
 import { MessageItem } from './MessageItem';
-import { Message, Job } from '../../types';
+import { Message, Job } from '@/types';
 
 interface ChatWindowProps {
     messages: Message[];

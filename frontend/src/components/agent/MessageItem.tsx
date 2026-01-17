@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { FileText, Hash, Database, Search, Loader2, Eye } from 'lucide-react';
-import { cn } from '../../utils';
-import { Message, Job } from '../../types';
+import { cn } from '@/utils';
+import { Message, Job } from '@/types';
 
 interface MessageItemProps {
     msg: Message;

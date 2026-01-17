@@ -1,8 +1,8 @@
 import { FC } from 'react';
 import { Filter, Settings, Search, CheckCircle, Clock } from 'lucide-react';
-import { cn } from '../utils';
-import { Job, Record } from '../types';
-import { useDataGrid } from '../hooks/useDataGrid';
+import { cn } from '@/utils';
+import { Job, Record } from '@/types';
+import { useDataGrid } from '@/hooks/useDataGrid';
 
 interface DataGridProps {
     records: Record[];

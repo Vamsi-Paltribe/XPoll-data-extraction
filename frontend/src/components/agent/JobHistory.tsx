@@ -1,7 +1,7 @@
 import React from 'react';
 import { Database, CheckCircle, Loader2, AlertTriangle, Eye, Sparkles } from 'lucide-react';
-import { cn } from '../../utils';
-import { Job } from '../../types';
+import { cn } from '@/utils';
+import { Job } from '@/types';
 
 interface JobHistoryProps {
     allJobs: Job[] | undefined;

@@ -4,19 +4,19 @@ import {
     Database
 } from 'lucide-react';
 
-import GlobalStyles from '../components/GlobalStyles';
-import { Job } from '../types';
-import { useRegistryView } from '../components/registry';
+import GlobalStyles from '@/components/GlobalStyles';
+import { Job } from '@/types';
+import { useRegistryView } from '@/components/registry';
 
-const RegistryHeader = lazy(() => import('../components/registry').then(module => ({ default: module.RegistryHeader })));
-const RegistryDragOverlay = lazy(() => import('../components/registry').then(module => ({ default: module.RegistryDragOverlay })));
+const RegistryHeader = lazy(() => import('@/components/registry').then(module => ({ default: module.RegistryHeader })));
+const RegistryDragOverlay = lazy(() => import('@/components/registry').then(module => ({ default: module.RegistryDragOverlay })));
 
 // Lazy Components
-const SyncModal = lazy(() => import('../components/SyncModal'));
-const DataGrid = lazy(() => import('../components/DataGrid'));
-const AgentConsole = lazy(() => import('../components/AgentConsole'));
-const SchemaSettings = lazy(() => import('../components/SchemaSettings'));
-const ReviewExtractionModal = lazy(() => import('../components/ReviewExtractionModal'));
+const SyncModal = lazy(() => import('@/components/SyncModal'));
+const DataGrid = lazy(() => import('@/components/DataGrid'));
+const AgentConsole = lazy(() => import('@/components/AgentConsole'));
+const SchemaSettings = lazy(() => import('@/components/SchemaSettings'));
+const ReviewExtractionModal = lazy(() => import('@/components/ReviewExtractionModal'));
 
 const ComponentLoader = () => (
     <div className="flex items-center justify-center p-12 opacity-50">

@@ -1,8 +1,8 @@
 import { Loader2, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { cn } from '../utils';
+import { cn } from '@/utils';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useJobs, useActiveJobs } from '../hooks';
+import { useJobs, useActiveJobs } from '@/hooks';
 
 const NotificationBar = () => {
     const { data: activeJobs } = useActiveJobs();

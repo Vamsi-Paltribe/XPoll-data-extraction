@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
-import api from '../services/api';
-import endpoints from '../constants/endpoints';
-import { User } from '../types';
+import api from '@/services/api';
+import endpoints from '@/constants/endpoints';
+import { User } from '@/types';
 
 export const useAuth = () => {
     const fetchMe = async () => {

@@ -1,9 +1,9 @@
 import { FC } from 'react';
 import { X, GitMerge, Check, AlertCircle, ArrowRight, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { cn } from '../utils';
-import { useBuckets } from '../hooks';
-import { useConsolidationWizard } from '../hooks/useConsolidationWizard';
+import { cn } from '@/utils';
+import { useBuckets } from '@/hooks';
+import { useConsolidationWizard } from '@/hooks/useConsolidationWizard';
 
 interface ConsolidationWizardProps {
     onClose: () => void;

@@ -23,17 +23,17 @@ import {
     closestCenter,
     defaultDropAnimationSideEffects
 } from '@dnd-kit/core';
-import { cn } from '../utils';
-import { useAuth, useBuckets } from '../hooks';
+import { cn } from '@/utils';
+import { useAuth, useBuckets } from '@/hooks';
 
 // Lazy Components
-const ConsolidationWizard = lazy(() => import('../components/ConsolidationWizard'));
+const ConsolidationWizard = lazy(() => import('@/components/ConsolidationWizard'));
 
 import {
     DraggableDroppableBucket,
     BucketCard,
     UnmergeOption
-} from '../components/dashboard';
+} from '@/components/dashboard';
 
 const DEFAULT_SCHEMA_FIELDS = ['Name', 'Address', 'City', 'State', 'Zip', 'Party'];
 
