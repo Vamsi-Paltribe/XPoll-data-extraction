@@ -1,6 +1,6 @@
 import { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { clsx } from 'clsx';
+import { cn } from '../utils';
 import {
     LogOut,
     Database,
@@ -49,19 +49,19 @@ const Layout = ({ children }: LayoutProps) => {
                                 </div>
                             </div>
                         )}
-                        <Link to="/" className={clsx(
+                        <Link to="/" className={cn(
                             "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all group",
                             isDashboard ? "text-slate-900 bg-slate-50" : "text-slate-400 hover:text-slate-900 hover:bg-slate-50"
                         )}>
-                            <LayoutGrid className={clsx("w-5 h-5 transition-transform", !isDashboard && "group-hover:scale-110")} />
+                            <LayoutGrid className={cn("w-5 h-5 transition-transform", !isDashboard && "group-hover:scale-110")} />
                             <span className="uppercase tracking-widest text-[10px]">Dashboard</span>
                         </Link>
 
-                        <Link to="/ledger" className={clsx(
+                        <Link to="/ledger" className={cn(
                             "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all group",
                             isLedger ? "text-slate-900 bg-slate-50" : "text-slate-400 hover:text-slate-900 hover:bg-slate-50"
                         )}>
-                            <Wallet className={clsx("w-5 h-5 transition-transform", !isLedger && "group-hover:scale-110")} />
+                            <Wallet className={cn("w-5 h-5 transition-transform", !isLedger && "group-hover:scale-110")} />
                             <span className="uppercase tracking-widest text-[10px]">Wallet & Ledger</span>
                         </Link>
 

@@ -23,7 +23,7 @@ import {
     closestCenter,
     defaultDropAnimationSideEffects
 } from '@dnd-kit/core';
-import clsx from 'clsx';
+import { cn } from '../utils';
 import { useAuth, useBuckets } from '../hooks';
 
 // Lazy Components
@@ -156,13 +156,13 @@ const Dashboard = () => {
                     {/* Merge Mode Toggle */}
                     <button
                         onClick={() => setIsMergeMode(!isMergeMode)}
-                        className={clsx(
+                        className={cn(
                             "group relative bg-white border border-[#2D384A]/10 rounded-2xl p-4 shadow-sm flex items-center justify-between gap-6 min-w-[260px] text-left transition-all",
                             isMergeMode ? "ring-2 ring-[#A8328D] bg-[#A8328D]/5" : "hover:shadow-md hover:border-[#A8328D]/30"
                         )}
                     >
                         <div className="flex items-center gap-4">
-                            <div className={clsx(
+                            <div className={cn(
                                 "w-12 h-12 rounded-xl flex items-center justify-center transition-all",
                                 isMergeMode ? "bg-[#A8328D] text-[#EEEEEF]" : "bg-[#EEEEEF] text-[#2D384A] group-hover:text-[#A8328D]"
                             )}>
@@ -171,7 +171,7 @@ const Dashboard = () => {
                             <div>
                                 <p className="text-[10px] font-bold text-[#2D384A] uppercase tracking-widest">Consolidation</p>
                                 <div className="flex items-center gap-2">
-                                    <span className={clsx("text-base font-bold transition-colors", isMergeMode ? "text-[#A8328D]" : "text-[#2D384A]")}>
+                                    <span className={cn("text-base font-bold transition-colors", isMergeMode ? "text-[#A8328D]" : "text-[#2D384A]")}>
                                         {isMergeMode ? 'Drag to Merge' : 'Enable Merge'}
                                     </span>
                                 </div>
@@ -179,11 +179,11 @@ const Dashboard = () => {
                         </div>
 
                         {/* Visual Toggle Switch */}
-                        <div className={clsx(
+                        <div className={cn(
                             "w-10 h-6 rounded-full relative transition-colors duration-300",
                             isMergeMode ? "bg-[#A8328D]" : "bg-slate-200 group-hover:bg-slate-300"
                         )}>
-                            <div className={clsx(
+                            <div className={cn(
                                 "absolute top-1 left-1 w-4 h-4 bg-white rounded-full shadow-sm transition-transform duration-300",
                                 isMergeMode ? "translate-x-4" : "translate-x-0"
                             )} />
@@ -318,10 +318,10 @@ const Dashboard = () => {
             {mergePair && (
                 <Suspense fallback={null}>
                     <ConsolidationWizard
-                        sourceBucket={mergePair.source}
-                        targetBucket={mergePair.target}
+                        initialSource={mergePair.source}
+                        initialTarget={mergePair.target}
                         onClose={() => setMergePair(null)}
-                        onComplete={() => {
+                        onCompleted={() => {
                             setMergePair(null);
                             setIsMergeMode(false);
                         }}
@@ -459,7 +459,7 @@ const Dashboard = () => {
                                                 <button
                                                     key={field}
                                                     onClick={() => toggleField(field)}
-                                                    className={clsx(
+                                                    className={cn(
                                                         "px-5 py-2.5 rounded-xl text-[11px] font-black transition-all border-2",
                                                         isActive
                                                             ? "bg-[#2D384A] text-white border-[#2D384A] shadow-md"

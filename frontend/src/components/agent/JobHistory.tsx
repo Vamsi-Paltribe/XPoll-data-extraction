@@ -1,6 +1,6 @@
 import React from 'react';
 import { Database, CheckCircle, Loader2, AlertTriangle, Eye, Sparkles } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../../utils';
 import { Job } from '../../types';
 
 interface JobHistoryProps {
@@ -28,7 +28,7 @@ export const JobHistory = ({
                             className="bg-white p-5 rounded-[24px] border border-slate-100 shadow-sm flex items-center justify-between group hover:shadow-md transition-all"
                         >
                             <div className="flex items-center gap-4">
-                                <div className={clsx(
+                                <div className={cn(
                                     "w-10 h-10 rounded-2xl flex items-center justify-center shadow-inner",
                                     job.status === 'completed' ? "bg-emerald-50 text-emerald-600" :
                                         job.status === 'waiting_approval' ? "bg-[#A8328D]/10 text-[#A8328D]" :
@@ -47,7 +47,7 @@ export const JobHistory = ({
                                             {new Date(job.createdAt).toLocaleDateString()}
                                         </span>
                                         <span className="w-1 h-1 bg-slate-300 rounded-full" />
-                                        <span className={clsx("text-[10px] font-black uppercase tracking-widest", job.status === 'completed' ? "text-emerald-500" : job.status === 'waiting_approval' ? "text-[#A8328D]" : "text-blue-500")}>
+                                        <span className={cn("text-[10px] font-black uppercase tracking-widest", job.status === 'completed' ? "text-emerald-500" : job.status === 'waiting_approval' ? "text-[#A8328D]" : "text-blue-500")}>
                                             {job.status.replace('_', ' ')}
                                         </span>
                                     </div>
@@ -77,7 +77,7 @@ export const JobHistory = ({
                     <div ref={loadMoreRef} className="py-8 flex justify-center">
                         {hasNextPage ? (
                             <div className="flex flex-col items-center gap-2">
-                                <Loader2 size={24} className={clsx("animate-spin text-[#A8328D]/30", isFetchingNextPage && "text-[#A8328D]")} />
+                                <Loader2 size={24} className={cn("animate-spin text-[#A8328D]/30", isFetchingNextPage && "text-[#A8328D]")} />
                                 <span className="text-[10px] font-bold text-slate-300 uppercase tracking-[0.2em]">
                                     {isFetchingNextPage ? 'Loading Registry Records' : 'Load More'}
                                 </span>

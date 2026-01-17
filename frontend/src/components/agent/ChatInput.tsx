@@ -1,6 +1,6 @@
 import React from 'react';
 import { Paperclip, ArrowUp, Loader2 } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../../utils';
 
 interface ChatInputProps {
     input: string;
@@ -51,7 +51,7 @@ export const ChatInput = ({
                     <button
                         onClick={() => onSend()}
                         disabled={isProcessing || (!input.trim() && !isProcessing)}
-                        className={clsx(
+                        className={cn(
                             "w-10 h-10 rounded-full flex items-center justify-center transition-all",
                             input.trim() || isProcessing ? "bg-[#2D384A] text-white shadow-lg" : "bg-slate-100 text-slate-300"
                         )}

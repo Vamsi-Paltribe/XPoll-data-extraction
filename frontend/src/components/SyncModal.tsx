@@ -1,6 +1,6 @@
 import { useState, useEffect, ChangeEvent } from 'react';
 import { useParams } from 'react-router-dom';
-import clsx from 'clsx';
+import { cn } from '../utils';
 import {
     X, Globe, Search, Database, Layers, Check,
     ChevronRight, Zap, MapPin, Filter
@@ -82,11 +82,11 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
                             { step: 2, label: 'City Targeting', icon: Search, active: selectedStates.length > 0, done: selectedCities.length > 0 },
                             { step: 3, label: 'Payload Schema', icon: Layers, active: true, done: selectedHeaders.length > 0 },
                         ].map((s) => (
-                            <div key={s.step} className={clsx(
+                            <div key={s.step} className={cn(
                                 "group flex items-center gap-4 p-4 rounded-2xl transition-all",
                                 s.active ? "" : "opacity-30 grayscale"
                             )}>
-                                <div className={clsx(
+                                <div className={cn(
                                     "w-8 h-8 rounded-lg flex items-center justify-center text-[10px] font-bold transition-all",
                                     s.done ? "bg-slate-900 text-white" : "bg-white border border-slate-200 text-slate-400"
                                 )}>
@@ -152,19 +152,19 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
                                             <button
                                                 key={st.name}
                                                 onClick={() => toggleState(st.name)}
-                                                className={clsx(
+                                                className={cn(
                                                     "p-5 rounded-2xl border transition-all text-left group",
                                                     isSelected
                                                         ? "bg-slate-900 border-slate-900 text-white shadow-lg"
                                                         : "bg-white border-slate-200 hover:border-slate-300"
                                                 )}
                                             >
-                                                <div className={clsx("text-[9px] font-bold tracking-widest uppercase mb-1", isSelected ? "text-slate-400" : "text-slate-300")}>
+                                                <div className={cn("text-[9px] font-bold tracking-widest uppercase mb-1", isSelected ? "text-slate-400" : "text-slate-300")}>
                                                     {displayCode}
                                                 </div>
                                                 <div className="text-sm font-bold truncate mb-3" title={st.name}>{st.name}</div>
                                                 <div className="flex items-center gap-2">
-                                                    <div className={clsx("w-1 h-1 rounded-full", isSelected ? "bg-blue-400" : "bg-slate-200")}></div>
+                                                    <div className={cn("w-1 h-1 rounded-full", isSelected ? "bg-blue-400" : "bg-slate-200")}></div>
                                                     <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">
                                                         {count} Rec
                                                     </span>
@@ -227,14 +227,14 @@ const SyncModal = ({ isOpen, onClose, onSync, isSyncing }: SyncModalProps) => {
                                                 <button
                                                     key={h}
                                                     onClick={() => toggleHeader(h)}
-                                                    className={clsx(
+                                                    className={cn(
                                                         "flex items-center gap-3 px-4 py-2.5 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all border outline-none",
                                                         isSelected
                                                             ? "bg-slate-900 border-slate-900 text-white shadow-md"
                                                             : "bg-white border-slate-200 text-slate-400 hover:border-slate-300"
                                                     )}
                                                 >
-                                                    <div className={clsx(
+                                                    <div className={cn(
                                                         "w-4 h-4 rounded border flex items-center justify-center transition-all",
                                                         isSelected ? "bg-white border-white" : "bg-white border-slate-200"
                                                     )}>

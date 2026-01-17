@@ -1,5 +1,5 @@
 import { Bot } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../../utils';
 
 interface ConsoleHeaderProps {
     showHistory: boolean;
@@ -19,13 +19,13 @@ export const ConsoleHeader = ({ showHistory, setShowHistory, hasWaitingJobs }: C
             <div className="flex bg-[#F8F9FA] p-1 rounded-xl">
                 <button
                     onClick={() => setShowHistory(false)}
-                    className={clsx("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", !showHistory ? "bg-white shadow-sm text-[#2D384A]" : "text-slate-400 hover:text-slate-600")}
+                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all", !showHistory ? "bg-white shadow-sm text-[#2D384A]" : "text-slate-400 hover:text-slate-600")}
                 >
                     Chat
                 </button>
                 <button
                     onClick={() => setShowHistory(true)}
-                    className={clsx("px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative", showHistory ? "bg-white shadow-sm text-[#2D384A]" : "text-slate-400 hover:text-slate-600")}
+                    className={cn("px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative", showHistory ? "bg-white shadow-sm text-[#2D384A]" : "text-slate-400 hover:text-slate-600")}
                 >
                     Job History
                     {hasWaitingJobs && (

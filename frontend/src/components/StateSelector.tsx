@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, FC } from 'react';
 import { Check, ChevronsUpDown, Search, X } from "lucide-react";
+import { cn } from '../utils';
 
 const US_STATES = [
     "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado", "Connecticut", "Delaware", "Florida", "Georgia",
@@ -46,14 +47,15 @@ const StateSelector: FC<StateSelectorProps> = ({ value, onChange, className }) =
     }, [isOpen]);
 
     return (
-        <div className={`relative ${className}`} ref={dropdownRef}>
+        <div className={cn("relative", className)} ref={dropdownRef}>
             {/* Toggle Button */}
             <div
                 onClick={() => setIsOpen(!isOpen)}
-                className={`flex h-11 w-full items-center justify-between rounded-xl border bg-white px-3 py-2 text-sm font-bold cursor-pointer transition-all hover:bg-slate-50
-                ${isOpen ? 'border-slate-900 ring-2 ring-slate-900/10' : 'border-slate-200'}
-                ${!value ? 'text-slate-500' : 'text-slate-900'}
-                `}
+                className={cn(
+                    "flex h-11 w-full items-center justify-between rounded-xl border bg-white px-3 py-2 text-sm font-bold cursor-pointer transition-all hover:bg-slate-50",
+                    isOpen ? 'border-slate-900 ring-2 ring-slate-900/10' : 'border-slate-200',
+                    !value ? 'text-slate-500' : 'text-slate-900'
+                )}
             >
                 {value || <span className="font-normal opacity-50">Select state...</span>}
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
@@ -92,12 +94,13 @@ const StateSelector: FC<StateSelectorProps> = ({ value, onChange, className }) =
                                         onChange(state === value ? "" : state);
                                         setIsOpen(false);
                                     }}
-                                    className={`relative flex cursor-default select-none items-center rounded-lg px-2 py-2 text-sm outline-none transition-colors hover:bg-slate-100 cursor-pointer
-                                    ${value === state ? 'bg-slate-100 text-slate-900 font-bold' : 'text-slate-700'}
-                                    `}
+                                    className={cn(
+                                        "relative flex cursor-default select-none items-center rounded-lg px-2 py-2 text-sm outline-none transition-colors hover:bg-slate-100 cursor-pointer",
+                                        value === state ? 'bg-slate-100 text-slate-900 font-bold' : 'text-slate-700'
+                                    )}
                                 >
                                     <Check
-                                        className={`mr-2 h-4 w-4 transition-opacity ${value === state ? "opacity-100" : "opacity-0"}`}
+                                        className={cn("mr-2 h-4 w-4 transition-opacity", value === state ? "opacity-100" : "opacity-0")}
                                     />
                                     {state}
                                 </div>

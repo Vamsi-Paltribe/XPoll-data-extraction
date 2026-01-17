@@ -1,5 +1,5 @@
 import { Database } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../../../utils';
 
 interface StatsCardProps {
     label: string;
@@ -10,7 +10,7 @@ interface StatsCardProps {
 
 export const StatsCard = ({ label, value, icon, type = 'default' }: StatsCardProps) => (
     <div className="p-5 rounded-2xl border border-[#2D384A]/5 bg-white flex items-center gap-4 shadow-sm">
-        <div className={clsx(
+        <div className={cn(
             "w-10 h-10 rounded-xl flex items-center justify-center",
             type === 'warning' ? 'bg-amber-50' : 'bg-[#EEEEEF]'
         )}>

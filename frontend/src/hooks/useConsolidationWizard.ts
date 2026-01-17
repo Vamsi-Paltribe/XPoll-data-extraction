@@ -5,12 +5,14 @@ import { toast } from 'sonner';
 interface ConsolidationWizardProps {
     onClose: () => void;
     onCompleted: (newBucketId: string) => void;
+    initialSource?: any;
+    initialTarget?: any;
 }
 
-export const useConsolidationWizard = ({ onClose, onCompleted }: ConsolidationWizardProps) => {
+export const useConsolidationWizard = ({ onClose, onCompleted, initialSource, initialTarget }: ConsolidationWizardProps) => {
     const [step, setStep] = useState(1);
-    const [sourceId, setSourceId] = useState<string>('');
-    const [targetId, setTargetId] = useState<string>('');
+    const [sourceId, setSourceId] = useState<string>(initialSource?._id || '');
+    const [targetId, setTargetId] = useState<string>(initialTarget?._id || '');
     const [strategy, setStrategy] = useState<'keep_target' | 'keep_source' | 'manual'>('keep_target');
 
     const { data: analysis, isPending: analyzing, error: analysisError } = useMergeAnalysis(

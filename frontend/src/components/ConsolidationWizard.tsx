@@ -1,18 +1,20 @@
 import { FC } from 'react';
 import { X, GitMerge, Check, AlertCircle, ArrowRight, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import clsx from 'clsx';
+import { cn } from '../utils';
 import { useBuckets } from '../hooks';
 import { useConsolidationWizard } from '../hooks/useConsolidationWizard';
 
 interface ConsolidationWizardProps {
     onClose: () => void;
     onCompleted: (newBucketId: string) => void;
+    initialSource?: any;
+    initialTarget?: any;
 }
 
 const StatsCard = ({ label, value, subValue, icon: Icon, color }: any) => (
     <div className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm flex items-center gap-4">
-        <div className={clsx("w-10 h-10 rounded-xl flex items-center justify-center", color)}>
+        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", color)}>
             <Icon size={20} />
         </div>
         <div>
@@ -25,17 +27,17 @@ const StatsCard = ({ label, value, subValue, icon: Icon, color }: any) => (
     </div>
 );
 
-const ResolutionOption = ({ id, title, desc, active, onClick }: any) => (
+const ResolutionOption = ({ title, desc, active, onClick }: any) => (
     <div
         onClick={onClick}
-        className={clsx(
+        className={cn(
             "p-5 rounded-2xl border-2 transition-all cursor-pointer group",
             active ? "border-[#A8328D] bg-[#A8328D]/5" : "border-slate-100 bg-white hover:border-slate-200"
         )}
     >
         <div className="flex justify-between items-start mb-2">
-            <h4 className={clsx("font-bold text-sm", active ? "text-[#A8328D]" : "text-[#2D384A]")}>{title}</h4>
-            <div className={clsx(
+            <h4 className={cn("font-bold text-sm", active ? "text-[#A8328D]" : "text-[#2D384A]")}>{title}</h4>
+            <div className={cn(
                 "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
                 active ? "border-[#A8328D] bg-[#A8328D]" : "border-slate-200"
             )}>
@@ -172,7 +174,7 @@ const Step3Resolution = ({ strategy, setStrategy }: any) => (
 );
 
 const ConsolidationWizard: FC<ConsolidationWizardProps> = (props) => {
-    const { data: buckets } = useBuckets();
+    const { buckets } = useBuckets();
     const {
         step,
         sourceId,

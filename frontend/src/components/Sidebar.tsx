@@ -1,6 +1,6 @@
 import { LogOut, Wallet, LayoutGrid } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import clsx from 'clsx';
+import { cn } from '../utils';
 
 const Sidebar = () => {
     const location = useLocation();
@@ -40,7 +40,7 @@ const Sidebar = () => {
                         <button
                             key={item.label}
                             onClick={() => navigate(item.path)}
-                            className={clsx(
+                            className={cn(
                                 "w-full aspect-square rounded-[22px] flex items-center justify-center transition-all duration-300 group relative",
                                 // Active State: Reverse Colors (Dark BG, Light Icon)
                                 isActive

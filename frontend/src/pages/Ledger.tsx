@@ -8,7 +8,7 @@ import {
     Activity,
     Search
 } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../utils';
 
 interface LedgerEntry {
     _id: string;
@@ -119,7 +119,7 @@ const Ledger = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
-                                            <div className={clsx(
+                                            <div className={cn(
                                                 "inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-bold tracking-tight",
                                                 log.type === 'debit'
                                                     ? "bg-[#2D384A]/5 text-[#2D384A]"
@@ -140,7 +140,7 @@ const Ledger = () => {
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            <span className={clsx(
+                                            <span className={cn(
                                                 "text-sm font-bold font-mono",
                                                 log.type === 'debit' ? "text-[#2D384A]" : "text-[#A8328D]"
                                             )}>

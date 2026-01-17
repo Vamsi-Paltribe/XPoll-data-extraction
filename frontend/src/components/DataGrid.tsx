@@ -1,6 +1,6 @@
 import { FC } from 'react';
 import { Filter, Settings, Search, CheckCircle, Clock } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../utils';
 import { Job, Record } from '../types';
 import { useDataGrid } from '../hooks/useDataGrid';
 
@@ -36,7 +36,7 @@ interface DataGridProps {
 const EmptyState = ({ icon: Icon, title, desc }: { icon: any, title: string, desc: string }) => (
     <div className="flex flex-col items-center justify-center py-20 text-slate-400">
         <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mb-4">
-            <Icon size={24} className={clsx(title === 'All caught up!' ? 'text-emerald-500' : 'text-slate-300')} />
+            <Icon size={24} className={cn(title === 'All caught up!' ? 'text-emerald-500' : 'text-slate-300')} />
         </div>
         <h3 className="text-sm font-bold text-slate-900">{title}</h3>
         <p className="text-xs text-slate-400 mt-1">{desc}</p>
@@ -131,7 +131,6 @@ const GridTable = ({
 
 const DataGrid: FC<DataGridProps> = (props) => {
     const {
-        records,
         columns,
         totalCount,
         pageInfo,
@@ -168,7 +167,7 @@ const DataGrid: FC<DataGridProps> = (props) => {
                 <div className="flex gap-4">
                     <button
                         onClick={() => onFilterChange?.('all')}
-                        className={clsx(
+                        className={cn(
                             "px-4 py-2 rounded-xl text-xs font-bold transition-colors",
                             activeFilter === 'all' ? "bg-[#F8F9FA] text-[#2D384A]" : "text-slate-400 hover:text-[#2D384A]"
                         )}
@@ -177,7 +176,7 @@ const DataGrid: FC<DataGridProps> = (props) => {
                     </button>
                     <button
                         onClick={() => onFilterChange?.('approvals')}
-                        className={clsx(
+                        className={cn(
                             "px-4 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-2",
                             activeFilter === 'approvals' ? "bg-[#F8F9FA] text-[#2D384A]" : "text-slate-400 hover:text-[#2D384A]"
                         )}
@@ -193,7 +192,7 @@ const DataGrid: FC<DataGridProps> = (props) => {
                 <div className="flex items-center gap-3">
                     <button
                         onClick={() => setShowFilters(!showFilters)}
-                        className={clsx(
+                        className={cn(
                             "p-2 rounded-lg transition-colors",
                             showFilters ? "bg-[#2D384A] text-white" : "hover:bg-[#F8F9FA] text-slate-400 hover:text-[#2D384A]"
                         )}

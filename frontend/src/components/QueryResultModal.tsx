@@ -1,7 +1,7 @@
 import { FC, useEffect, useMemo, useState } from 'react';
 import { X, Database, Check as CheckIcon, Download, FileSpreadsheet, FileText } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import clsx from 'clsx';
+import { cn } from '../utils';
 import DataGrid from './DataGrid';
 import { PaginatedResponse } from '../types';
 
@@ -67,7 +67,7 @@ const ExportMenu = ({
                     <div className="grid grid-cols-2 gap-2">
                         <button
                             onClick={() => setExportFormat('csv')}
-                            className={clsx(
+                            className={cn(
                                 "px-3 py-3 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-2",
                                 exportFormat === 'csv' ? "bg-[#2D384A] text-white border-[#2D384A]" : "bg-white text-[#2D384A]/60 border-[#EEEEEF] hover:border-[#2D384A]/20"
                             )}
@@ -76,7 +76,7 @@ const ExportMenu = ({
                         </button>
                         <button
                             onClick={() => setExportFormat('xlsx')}
-                            className={clsx(
+                            className={cn(
                                 "px-3 py-3 rounded-xl text-[10px] font-bold border transition-all flex items-center justify-center gap-2",
                                 exportFormat === 'xlsx' ? "bg-[#A8328D] text-white border-[#A8328D]" : "bg-white text-[#2D384A]/60 border-[#EEEEEF] hover:border-[#2D384A]/20"
                             )}
@@ -99,7 +99,7 @@ const ExportMenu = ({
                     <div className="max-h-40 overflow-y-auto space-y-1 pr-2 custom-scrollbar">
                         {availableColumns.map(col => (
                             <label key={col} className="flex items-center gap-3 p-2 hover:bg-[#EEEEEF]/50 rounded-xl cursor-pointer group transition-colors">
-                                <div className={clsx(
+                                <div className={cn(
                                     "w-4 h-4 rounded-md border flex items-center justify-center transition-all",
                                     selectedColumns.has(col) ? "bg-[#2D384A] border-[#2D384A]" : "border-[#EEEEEF] bg-white group-hover:border-[#2D384A]/30"
                                 )}>
@@ -206,7 +206,7 @@ const QueryResultModal: FC<QueryResultModalProps> = ({
                             <DataGrid
                                 records={records}
                                 columns={availableColumns}
-                                pagination={pagination}
+                                pagination={pagination as any}
                                 onPageChange={onPageChange}
                             />
                         </div>

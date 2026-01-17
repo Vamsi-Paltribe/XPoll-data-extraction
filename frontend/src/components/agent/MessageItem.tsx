@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { FileText, Hash, Database, Search, Loader2, Eye } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../../utils';
 import { Message, Job } from '../../types';
 
 interface MessageItemProps {
@@ -17,8 +17,8 @@ export const MessageItem = ({ msg, allJobs, onReviewJob, onViewData }: MessageIt
     }, [msg.jobId, allJobs]);
 
     return (
-        <div className={clsx("flex flex-col gap-2", msg.type === 'user' ? "items-end" : "items-start")}>
-            <div className={clsx(
+        <div className={cn("flex flex-col gap-2", msg.type === 'user' ? "items-end" : "items-start")}>
+            <div className={cn(
                 "max-w-[90%] p-4 text-sm font-medium shadow-sm transition-all animate-in zoom-in-95 duration-200",
                 msg.type === 'user'
                     ? "bg-[#2D384A] text-white rounded-[20px] rounded-tr-sm"
@@ -156,7 +156,7 @@ export const MessageItem = ({ msg, allJobs, onReviewJob, onViewData }: MessageIt
                 <div className="ml-1 mt-2 bg-[#F8F9FA] rounded-[24px] p-5 border border-slate-100 flex flex-col gap-3 w-[280px] shadow-sm animate-in slide-up">
                     <div className="flex justify-between items-center">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest truncate max-w-[120px]">{embeddedJob.originalName}</span>
-                        <span className={clsx(
+                        <span className={cn(
                             "text-[10px] font-bold px-2 py-1 rounded-lg uppercase tracking-wide",
                             embeddedJob.status === 'completed' ? "bg-emerald-100 text-emerald-700" :
                                 embeddedJob.status === 'waiting_approval' ? "bg-[#A8328D]/10 text-[#A8328D]" :

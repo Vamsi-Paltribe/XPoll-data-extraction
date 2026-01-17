@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Database, Clock, Layers, RotateCcw, ArrowUpRight } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../../utils';
 
 interface BucketCardProps {
     bucket: any;
@@ -34,7 +34,7 @@ export const BucketCard = memo(({
             {...attributes}
             {...listeners}
             onClick={() => !isMergeMode && onNavigate(bucket._id)}
-            className={clsx(
+            className={cn(
                 "bg-white p-5 rounded-2xl border transition-all duration-300 group relative overflow-hidden cursor-pointer",
                 "shadow-[0px_2px_8px_rgba(45,56,74,0.05)] border-[#2D384A]/10",
                 "hover:shadow-[0px_8px_24px_rgba(168,50,141,0.12)] hover:border-[#A8328D]/30",
@@ -47,7 +47,7 @@ export const BucketCard = memo(({
             <div className="absolute top-0 inset-x-0 h-1 bg-[#A8328D] opacity-0 group-hover:opacity-100 transition-opacity" />
 
             <div className="flex items-start justify-between mb-4">
-                <div className={clsx(
+                <div className={cn(
                     "w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300",
                     bucket.isMerged ? "bg-[#2D384A] text-[#EEEEEF]" : "bg-[#EEEEEF] text-[#2D384A]"
                 )}>
@@ -55,7 +55,7 @@ export const BucketCard = memo(({
                 </div>
 
                 <div className="flex flex-col items-end gap-1.5">
-                    <div className={clsx(
+                    <div className={cn(
                         "px-2.5 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-widest border",
                         bucket.status === 'paused'
                             ? "bg-slate-100 text-slate-400 border-slate-200"

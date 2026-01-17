@@ -1,6 +1,6 @@
 import { Loader2, CheckCircle, AlertCircle, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import clsx from 'clsx';
+import { cn } from '../utils';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useJobs, useActiveJobs } from '../hooks';
 
@@ -25,7 +25,7 @@ const NotificationBar = () => {
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
-                className={clsx(
+                className={cn(
                     "w-full border-b px-4 py-2 flex items-center justify-center text-sm font-medium relative z-40",
                     primaryJob.status === 'waiting_approval' ? "bg-amber-50 border-amber-200 text-amber-900" :
                         primaryJob.status === 'processing' ? "bg-blue-50 border-blue-200 text-blue-900" :

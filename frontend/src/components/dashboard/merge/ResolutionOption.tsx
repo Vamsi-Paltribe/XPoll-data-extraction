@@ -1,4 +1,4 @@
-import clsx from 'clsx';
+import { cn } from '../../../utils';
 
 interface ResolutionOptionProps {
     title: string;
@@ -7,11 +7,11 @@ interface ResolutionOptionProps {
 }
 
 export const ResolutionOption = ({ title, desc, active = false }: ResolutionOptionProps) => (
-    <div className={clsx(
+    <div className={cn(
         "p-4 rounded-xl border-2 transition-all cursor-pointer flex items-center gap-4",
         active ? 'bg-white border-[#A8328D] shadow-md' : 'bg-transparent border-[#2D384A]/5 hover:border-[#2D384A]/20'
     )}>
-        <div className={clsx(
+        <div className={cn(
             "w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all",
             active ? 'border-[#A8328D] bg-[#A8328D]' : 'border-[#2D384A]/20'
         )}>

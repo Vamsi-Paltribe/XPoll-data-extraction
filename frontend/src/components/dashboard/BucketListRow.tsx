@@ -1,6 +1,6 @@
 import { memo } from 'react';
 import { Database, Clock, Layers, RotateCcw, ArrowUpRight } from 'lucide-react';
-import clsx from 'clsx';
+import { cn } from '../../utils';
 
 interface BucketListRowProps {
     bucket: any;
@@ -34,7 +34,7 @@ export const BucketListRow = memo(({
             {...attributes}
             {...listeners}
             onClick={() => !isMergeMode && onNavigate(bucket._id)}
-            className={clsx(
+            className={cn(
                 "group relative bg-white cursor-pointer transition-all duration-200 border-b border-[#2D384A]/5 last:border-0",
                 "hover:bg-[#EEEEEF]/50 hover:z-10 px-6 py-3",
                 isMergeMode && "bg-[#A8328D]/5",
@@ -45,7 +45,7 @@ export const BucketListRow = memo(({
             <div className="grid grid-cols-[40px_1fr_120px_100px_80px] items-center gap-4">
 
                 {/* 1. ICON */}
-                <div className={clsx(
+                <div className={cn(
                     "w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors",
                     bucket.isMerged
                         ? "bg-[#2D384A] text-[#EEEEEF]"
@@ -77,7 +77,7 @@ export const BucketListRow = memo(({
 
                 {/* 4. STATUS (Emerald Green for Active) */}
                 <div className="flex justify-center">
-                    <div className={clsx(
+                    <div className={cn(
                         "px-2.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-widest border text-center w-full max-w-[80px]",
                         bucket.status === 'paused'
                             ? "bg-slate-100 text-slate-400 border-slate-200"
